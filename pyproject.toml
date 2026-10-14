@@ -1,0 +1,10 @@
+[project]
+name = "clash-smart-switcher"
+version = "1.0.0"
+description = "Local Mihomo node monitoring desktop application"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+qt_api = "pyside6"

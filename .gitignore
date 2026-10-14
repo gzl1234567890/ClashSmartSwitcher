@@ -1,0 +1,12 @@
+.conda/
+__pycache__/
+.pytest_cache/
+build/
+dist/
+*.pyc
+*.log
+verification/private/
+verification/*
+!verification/.gitkeep
+!verification/live-probe.json
+!verification/test-results-final.xml

@@ -1,0 +1,4 @@
+PySide6-Essentials==6.10.2
+PyYAML==6.0.3
+pywin32==311; sys_platform == 'win32'
+psutil==7.2.2
