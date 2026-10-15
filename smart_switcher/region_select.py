@@ -94,6 +94,15 @@ class RegionChip(QWidget):
         layout.addWidget(self.remove_button)
 
 
+class RegionSearchEdit(QLineEdit):
+    clicked = Signal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class RegionMultiSelect(QFrame):
     selection_changed = Signal(list)
 
@@ -101,6 +110,7 @@ class RegionMultiSelect(QFrame):
         super().__init__(parent)
         self._selected = []
         self._options = []
+        self._popup_filter_installed = False
         self.setObjectName("regionSelect")
         self.setAccessibleName("排除地区")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -131,7 +141,7 @@ class RegionMultiSelect(QFrame):
         layout.setSpacing(6)
         self.content = QWidget()
         self.flow = FlowLayout(self.content)
-        self.editor = QLineEdit()
+        self.editor = RegionSearchEdit()
         self.editor.setObjectName("regionSearch")
         self.editor.setMinimumWidth(130)
         self.editor.setPlaceholderText("请选择或搜索地区")
@@ -182,6 +192,7 @@ class RegionMultiSelect(QFrame):
         self.empty_label.setObjectName("regionEmpty")
         menu.addWidget(self.empty_label)
         self.editor.textChanged.connect(self._search_changed)
+        self.editor.clicked.connect(self._toggle_popup)
         self.editor.installEventFilter(self)
         self.content.installEventFilter(self)
         self._render_selection()
@@ -278,13 +289,17 @@ class RegionMultiSelect(QFrame):
         self.popup.show()
         self._position_popup()
         self.toggle_button.setArrowType(Qt.UpArrow)
-        QApplication.instance().installEventFilter(self)
+        if not self._popup_filter_installed:
+            QApplication.instance().installEventFilter(self)
+            self._popup_filter_installed = True
         self.editor.setFocus()
 
     def hide_popup(self):
         self.popup.hide()
         self.toggle_button.setArrowType(Qt.DownArrow)
-        QApplication.instance().removeEventFilter(self)
+        if self._popup_filter_installed:
+            QApplication.instance().removeEventFilter(self)
+            self._popup_filter_installed = False
 
     def _toggle_popup(self):
         if self.popup.isVisible():
@@ -323,17 +338,26 @@ class RegionMultiSelect(QFrame):
     def eventFilter(self, watched, event):
         kind = event.type()
         if self.popup.isVisible():
-            if kind == QEvent.MouseButtonPress and not self._contains(watched):
-                self.hide_popup()
-            elif kind == QEvent.FocusIn and not self._contains(watched):
+            if kind == QEvent.MouseButtonPress:
+                position = event.globalPosition().toPoint()
+                if not (self.rect().contains(self.mapFromGlobal(position))
+                        or self.popup.rect().contains(self.popup.mapFromGlobal(position))):
+                    self.hide_popup()
+            elif kind == QEvent.FocusIn and isinstance(watched, QWidget) and not self._contains(watched):
                 self.hide_popup()
             elif kind == QEvent.ApplicationDeactivate:
                 self.hide_popup()
             elif kind in (QEvent.Move, QEvent.Resize) and watched is self.window():
                 self._position_popup()
-            elif kind == QEvent.Wheel and not (
-                    isinstance(watched, QWidget) and self.popup.isAncestorOf(watched)):
-                self.hide_popup()
+            elif kind == QEvent.Wheel:
+                # Native wheel delivery starts at QWindow, before reaching the viewport.
+                position = event.globalPosition().toPoint()
+                if not self.popup.rect().contains(self.popup.mapFromGlobal(position)):
+                    self.hide_popup()
+                elif watched is self.popup:
+                    # Only stop unhandled boundary/margin wheels after the list had its turn.
+                    event.accept()
+                    return True
         if kind == QEvent.KeyPress and self._contains(watched):
             key = event.key()
             if key == Qt.Key_Escape and self.popup.isVisible():
@@ -361,14 +385,17 @@ class RegionMultiSelect(QFrame):
             self.setProperty("focused", kind == QEvent.FocusIn)
             self.style().unpolish(self)
             self.style().polish(self)
-        if kind == QEvent.MouseButtonPress and isinstance(watched, QWidget) and not isinstance(watched, QToolButton):
-            if watched is self.editor or watched is self.content or self.content.isAncestorOf(watched):
-                self.show_popup()
+        if (kind == QEvent.MouseButtonPress and event.button() == Qt.LeftButton
+                and isinstance(watched, QWidget) and watched is not self.editor
+                and not isinstance(watched, QToolButton)):
+            if watched is self.content or self.content.isAncestorOf(watched):
+                self._toggle_popup()
+                return True
         return super().eventFilter(watched, event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.show_popup()
+            self._toggle_popup()
         super().mousePressEvent(event)
 
     def resizeEvent(self, event):
