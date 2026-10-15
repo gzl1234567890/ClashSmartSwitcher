@@ -111,7 +111,8 @@ class SwitchEngine:
             return item
 
         # Only keep at most concurrency pending requests; cancellation stops new submissions.
-        with ThreadPoolExecutor(max_workers=settings.concurrency, thread_name_prefix="node-delay") as pool:
+        with ThreadPoolExecutor(max_workers=min(settings.concurrency, len(members)),
+                                thread_name_prefix="node-delay") as pool:
             pending = {}
             names = iter(members)
             for _ in range(min(settings.concurrency, len(members))):

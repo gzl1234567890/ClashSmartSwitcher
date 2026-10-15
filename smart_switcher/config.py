@@ -9,6 +9,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+MAX_CONCURRENCY = 256
+
+
 def data_directory() -> Path:
     return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "ClashSmartSwitcher"
 
@@ -25,6 +28,7 @@ class Settings:
     test_url: str = "https://www.gstatic.com/generate_204"
     excluded_regions: list[str] = field(default_factory=lambda: ["香港", "新加坡"])
     concurrency: int = 4
+    concurrency_auto: bool = True
     minimum_switch_seconds: int = 60
     close_to_tray: bool = True
     save_secret: bool = True
@@ -32,7 +36,7 @@ class Settings:
     def validate(self) -> None:
         for name, lower, upper in [
             ("threshold_ms", 1, 60000), ("interval_seconds", 5, 86400),
-            ("timeout_ms", 500, 30000), ("concurrency", 1, 16),
+            ("timeout_ms", 500, 30000), ("concurrency", 1, MAX_CONCURRENCY),
             ("minimum_switch_seconds", 0, 86400),
         ]:
             value = getattr(self, name)
@@ -45,7 +49,7 @@ class Settings:
         for name in ("controller", "secret", "group", "test_url"):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(f"{name} 格式错误")
-        for name in ("auto_enabled", "close_to_tray", "save_secret"):
+        for name in ("auto_enabled", "close_to_tray", "save_secret", "concurrency_auto"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} 格式错误")
         if any(c in self.secret for c in "\r\n"):

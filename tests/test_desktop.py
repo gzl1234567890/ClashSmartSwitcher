@@ -114,3 +114,31 @@ def test_ui_has_no_fake_nodes_and_accepts_real_results(qtbot, tmp_path):
     for handler in logger.handlers[:]:
         handler.close()
         logger.removeHandler(handler)
+
+
+def test_settings_controls_follow_group_size_and_region_chips(qtbot, tmp_path):
+    store = ConfigStore(tmp_path)
+    logger, redactor = setup_logging(tmp_path / "logs")
+    subject = controller(qtbot)
+    window = MainWindow(store, Settings(), logger, redactor, subject)
+    qtbot.addWidget(window)
+    client = subject.client
+    window._connected({"client": client, "proxies": client.proxies(), "groups": ["组"],
+                       "version": "mock-test", "traffic": TrafficState(True, False)})
+    window.group.setCurrentIndex(window.group.findData("组"))
+    assert window.concurrency.maximum() == len(client.delays)
+    assert window.concurrency.value() == len(client.delays)
+    window.concurrency.setValue(2)
+    assert not window.settings.concurrency_auto
+    window.region_selector.setCurrentText("日本")
+    window._add_region_from_editor()
+    assert "日本" in window._excluded_regions
+    window._remove_region("日本")
+    qtbot.wait(200)
+    assert "日本" not in window._excluded_regions
+    assert window.threshold.toolTip().endswith("1–60000")
+    window.tray.hide()
+    window.closeEvent = lambda event: event.accept()
+    for handler in logger.handlers[:]:
+        handler.close()
+        logger.removeHandler(handler)
