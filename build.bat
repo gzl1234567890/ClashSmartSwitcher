@@ -13,4 +13,4 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 "%TASK_PYTHON%" scripts\package_release.py
 if errorlevel 1 exit /b 1
-echo Build complete: dist\ClashSmartSwitcher-1.0.0-windows-x64.zip
+echo Build complete: dist\ClashSmartSwitcher-1.1.0-windows-x64.zip

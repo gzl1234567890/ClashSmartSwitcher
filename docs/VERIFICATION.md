@@ -16,7 +16,7 @@
 
 - PyInstaller 一目录包启动冒烟测试通过
 - `--smoke-test` 成功创建窗口、保存截图并正常退出
-- 发布 ZIP：`dist/ClashSmartSwitcher-1.0.0-windows-x64.zip`
+- 发布 ZIP：`dist/ClashSmartSwitcher-1.1.0-windows-x64.zip`
 - Qt ICU 依赖已过滤，避免其他 Python/Conda 运行时中的 ICU DLL 覆盖 Windows 系统 ICU
 
 ## 自动化测试

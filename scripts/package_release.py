@@ -12,7 +12,7 @@ subprocess.run([str(exe), "--smoke-test", "--data-dir", str(root / "verification
                 "--screenshot", str(root / "verification" / "packaged-ui.png")], check=True, timeout=30)
 shutil.copy2(root / "README.md", folder / "README.md")
 shutil.copytree(root / "docs", folder / "使用说明", dirs_exist_ok=True)
-archive = root / "dist" / "ClashSmartSwitcher-1.0.0-windows-x64.zip"
+archive = root / "dist" / "ClashSmartSwitcher-1.1.0-windows-x64.zip"
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as output:
     for path in sorted(folder.rglob("*")):
         if path.is_file():
