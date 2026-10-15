@@ -130,12 +130,31 @@ def test_settings_controls_follow_group_size_and_region_chips(qtbot, tmp_path):
     assert window.concurrency.value() == len(client.delays)
     window.concurrency.setValue(2)
     assert not window.settings.concurrency_auto
-    window.region_selector.setCurrentText("日本")
-    window._add_region_from_editor()
-    assert "日本" in window._excluded_regions
-    window._remove_region("日本")
-    qtbot.wait(200)
-    assert "日本" not in window._excluded_regions
+    window.region_selector.set_selected_regions(["香港", "新加坡", "日本"])
+    assert "日本" in window._read_settings().excluded_regions
+    window.region_selector.remove_region("日本")
+    assert "日本" not in window._read_settings().excluded_regions
+    assert [window.region_selector.options.item(i).text()
+            for i in range(window.region_selector.options.count())] == ["美国", "德国", "香港", "新加坡"]
+    window.proxies.update({"JP01": {"type": "Shadowsocks"}, "TW01": {"type": "Shadowsocks"},
+                           "第二组": {"type": "Selector", "all": ["JP01", "TW01", "子组", "DIRECT"]}})
+    window.group.addItem("第二组", "第二组")
+    window.group.setCurrentIndex(window.group.findData("第二组"))
+    assert [window.region_selector.options.item(i).text()
+            for i in range(window.region_selector.options.count())] == ["日本", "台湾", "香港", "新加坡"]
+    assert window.region_selector.selected_regions() == ["香港", "新加坡"]
+    window.region_selector.set_selected_regions(["台湾", "日本", "自定义地区"])
+    window.save_settings()
+    assert store.load().excluded_regions == ["台湾", "日本", "自定义地区"]
+    assert subject.settings.excluded_regions == ["台湾", "日本", "自定义地区"]
+    window._fill_settings()
+    assert window.region_selector.selected_regions() == store.load().excluded_regions
+    window.region_selector.remove_region("日本")
+    window.save_settings()
+    assert store.load().excluded_regions == ["台湾", "自定义地区"]
+    window.region_selector.clear()
+    window.save_settings()
+    assert store.load().excluded_regions == []
     assert window.threshold.toolTip().endswith("1–60000")
     window.tray.hide()
     window.closeEvent = lambda event: event.accept()

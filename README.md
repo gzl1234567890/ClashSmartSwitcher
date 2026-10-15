@@ -4,7 +4,7 @@ Python + PySide6 开发的独立 Windows 桌面工具，使用 Mihomo 官方本�
 
 ## 直接运行
 
-解压 `ClashSmartSwitcher-1.1.0-windows-x64.zip`，双击其中的 `ClashSmartSwitcher.exe`。请保留同目录的 `_internal` 文件夹，不要只复制 EXE。分发包自带 Python 与 Qt，使用者不需要安装 Python。
+解压 `ClashSmartSwitcher-1.1.1-windows-x64.zip`，双击其中的 `ClashSmartSwitcher.exe`。请保留同目录的 `_internal` 文件夹，不要只复制 EXE。分发包自带 Python 与 Qt，使用者不需要安装 Python。
 
 1. 先运行 Clash Verge。
 2. 软件启动后尝试自动连接；未连接时点击“自动发现”。
@@ -21,7 +21,7 @@ Python + PySide6 开发的独立 Windows 桌面工具，使用 Mihomo 官方本�
 | 检测间隔 | 60 秒，首次开启立即检测 |
 | 延迟阈值 | 120 ms，等于阈值时保持 |
 | 单节点测速超时 | 5000 ms |
-| 排除地区 | 香港、新加坡，可在设置页添加或删除 |
+| 排除地区 | 默认香港、新加坡；候选地区随当前代理组更新，支持搜索、多选、删除和清空 |
 | 测速地址 | https://www.gstatic.com/generate_204 |
 | 并发测速 | 默认等于当前代理组节点数，可手动调小 |
 | 最小切换间隔 | 60 秒，可设为 0 |
@@ -77,7 +77,7 @@ conda create --prefix .\.conda\clash-smart-switcher python=3.12 pip -y
 .\.conda\clash-smart-switcher\python.exe scripts\package_release.py
 ```
 
-输出：`dist\ClashSmartSwitcher\ClashSmartSwitcher.exe` 与 `dist\ClashSmartSwitcher-1.1.0-windows-x64.zip`。程序未做商业代码签名，Windows 可能显示“未知发布者”；请核对来源及 SHA256。构建脚本只打包程序与说明，不打包开发测试数据、个人配置、Conda 环境或运行日志。
+输出：`dist\ClashSmartSwitcher\ClashSmartSwitcher.exe` 与 `dist\ClashSmartSwitcher-1.1.1-windows-x64.zip`。程序未做商业代码签名，Windows 可能显示“未知发布者”；请核对来源及 SHA256。构建脚本只打包程序与说明，不打包开发测试数据、个人配置、Conda 环境或运行日志。
 
 ## 项目结构
 

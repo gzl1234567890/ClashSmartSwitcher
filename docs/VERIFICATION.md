@@ -16,12 +16,14 @@
 
 - PyInstaller 一目录包启动冒烟测试通过
 - `--smoke-test` 成功创建窗口、保存截图并正常退出
-- 发布 ZIP：`dist/ClashSmartSwitcher-1.1.0-windows-x64.zip`
+- 发布 ZIP：`dist/ClashSmartSwitcher-1.1.1-windows-x64.zip`
 - Qt ICU 依赖已过滤，避免其他 Python/Conda 运行时中的 ICU DLL 覆盖 Windows 系统 ICU
 
 ## 自动化测试
 
 此前完整测试记录为 81 项通过，记录见 `verification/test-results-final.xml`。当前受限执行环境会拒绝模拟 Windows 命名管道创建，并可能拒绝 pytest 临时目录访问；这两项限制不影响真实 Mihomo 命名管道探针或发布包冒烟测试。
+
+V1.1.1 回归：89 项通过，1 项命名管道测试因执行环境拒绝访问而排除；该项曾实际运行并报 WinError 5，不能视为通过。测试进程使用默认权限创建临时目录以兼容受限环境。另在原生 Windows Qt 平台运行桌面和地区多选相关测试，16 项通过；检查了 1120 像素及 850 像素窗口宽度下的标签换行、浮层位置和横向滚动情况。地区候选更新与保存恢复使用模拟代理组验证，未执行真实代理切换。
 
 ## 尚未执行
 

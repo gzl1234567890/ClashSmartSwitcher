@@ -5,13 +5,12 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFormLayout, QGridLayout, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QSpinBox, QSplitter, QStyle, QSystemTrayIcon,
-    QToolButton, QGraphicsOpacityEffect, QLayout,
     QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
 )
 
@@ -19,7 +18,8 @@ from .config import MAX_CONCURRENCY
 from .core import group_members, is_node
 from .api import ApiError
 from .monitor import MonitorController
-from .regions import excluded_region
+from .regions import available_regions, excluded_region
+from .region_select import RegionMultiSelect
 from .status import TrafficState
 
 
@@ -55,10 +55,6 @@ QPlainTextEdit { border: 1px solid #dce0e7; background: #fafbfc; padding: 7px; }
 QTextBrowser { border: none; background: white; padding: 15px; }
 QLabel#notice { padding: 9px 12px; background: #eef4f2; color: #285248; border-radius: 4px; }
 QLabel#settingHint { color: #616977; padding-left: 8px; }
-QWidget#regionChip { background: #e2f2ed; border: 1px solid #a9d7c9; border-radius: 14px; }
-QWidget#regionChip QLabel { color: #285248; padding-left: 10px; }
-QToolButton#regionRemove { border: none; border-radius: 10px; padding: 2px; }
-QToolButton#regionRemove:hover { background: #c6e8dc; }
 QStatusBar { background: #edf0f4; }
 """
 
@@ -74,90 +70,6 @@ class NoWheelSpinBox(QSpinBox):
         event.ignore()
 
 
-class FlowLayout(QLayout):
-    def __init__(self, parent=None, margin=0, spacing=8):
-        super().__init__(parent)
-        self.setContentsMargins(margin, margin, margin, margin)
-        self._items = []
-        self._spacing = spacing
-
-    def addItem(self, item):
-        self._items.append(item)
-
-    def count(self):
-        return len(self._items)
-
-    def itemAt(self, index):
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index):
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def expandingDirections(self):
-        return Qt.Orientations(Qt.Orientation(0))
-
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, width):
-        return self._do_layout(QRect(0, 0, width, 0), True)
-
-    def setGeometry(self, rect):
-        super().setGeometry(rect)
-        self._do_layout(rect, False)
-
-    def sizeHint(self):
-        return self.minimumSize()
-
-    def minimumSize(self):
-        size = QSize(0, 0)
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-
-    def _do_layout(self, rect, test_only):
-        margins = self.contentsMargins()
-        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
-        x, y, line_height = area.x(), area.y(), 0
-        for item in self._items:
-            space_x = self._spacing
-            space_y = self._spacing
-            next_x = x + item.sizeHint().width() + space_x
-            if next_x - space_x > area.right() and line_height > 0:
-                x = area.x()
-                y += line_height + space_y
-                next_x = x + item.sizeHint().width() + space_x
-                line_height = 0
-            if not test_only:
-                item.setGeometry(QRect(x, y, item.sizeHint().width(), item.sizeHint().height()))
-            x = next_x
-            line_height = max(line_height, item.sizeHint().height())
-        return y + line_height - rect.y() + margins.bottom()
-
-
-class RegionChip(QWidget):
-    remove_requested = Signal(str)
-
-    def __init__(self, region, parent=None):
-        super().__init__(parent)
-        self.region = region
-        self.setObjectName("regionChip")
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 2, 0)
-        layout.setSpacing(2)
-        label = QLabel(region)
-        close = QToolButton()
-        close.setObjectName("regionRemove")
-        close.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
-        close.setToolTip(f"删除排除地区：{region}")
-        close.setAccessibleName(f"删除排除地区：{region}")
-        close.setAutoRaise(True)
-        close.clicked.connect(lambda: self.remove_requested.emit(self.region))
-        layout.addWidget(label)
-        layout.addWidget(close)
-
-
 class MainWindow(QMainWindow):
     def __init__(self, store, settings, logger, redactor, controller=None):
         super().__init__()
@@ -168,7 +80,6 @@ class MainWindow(QMainWindow):
         self.exiting = False
         self.pending_start = False
         self._concurrency_internal = False
-        self._excluded_regions = []
         self.setWindowTitle("Clash 智能节点管家")
         self.resize(1120, 820)
         self.setMinimumSize(850, 630)
@@ -372,28 +283,8 @@ class MainWindow(QMainWindow):
             form.addRow(label, row)
         self.test_url = QLineEdit()
         form.addRow("测速地址", self.test_url)
-        regions = QWidget()
-        region_layout = QVBoxLayout(regions)
-        region_layout.setContentsMargins(0, 0, 0, 0)
-        region_layout.setSpacing(8)
-        region_input = QHBoxLayout()
-        self.region_selector = QComboBox()
-        self.region_selector.setEditable(True)
-        self.region_selector.setInsertPolicy(QComboBox.NoInsert)
-        self.region_selector.addItems(["香港", "新加坡", "日本", "美国", "德国", "英国", "韩国", "台湾"])
-        self.region_selector.setPlaceholderText("选择或输入地区")
-        self.region_selector.lineEdit().setPlaceholderText("选择或输入地区")
-        self.region_selector.setToolTip("选择预设地区，或输入自定义地区")
-        self.region_selector.lineEdit().returnPressed.connect(self._add_region_from_editor)
-        add_region = self.button("添加地区", QStyle.SP_FileDialogNewFolder, self._add_region_from_editor)
-        region_input.addWidget(self.region_selector, 1)
-        region_input.addWidget(add_region)
-        region_layout.addLayout(region_input)
-        self.region_chips_widget = QWidget()
-        self.region_chips_layout = FlowLayout(self.region_chips_widget, spacing=7)
-        self.region_chips_widget.setMinimumHeight(36)
-        region_layout.addWidget(self.region_chips_widget)
-        form.addRow("排除地区", regions)
+        self.region_selector = RegionMultiSelect()
+        form.addRow("排除地区", self.region_selector)
         self.close_to_tray = QCheckBox("关闭窗口时最小化到托盘")
         self.save_secret = QCheckBox("使用 Windows 账户加密保存密钥")
         form.addRow("窗口行为", self.close_to_tray)
@@ -461,7 +352,7 @@ class MainWindow(QMainWindow):
         self._concurrency_internal = False
         self.minimum_switch.setValue(s.minimum_switch_seconds)
         self.test_url.setText(s.test_url)
-        self._set_excluded_regions(s.excluded_regions)
+        self.region_selector.set_selected_regions(s.excluded_regions)
         self.close_to_tray.setChecked(s.close_to_tray)
         self.save_secret.setChecked(s.save_secret)
         self.redactor.secrets.add(s.secret)
@@ -472,7 +363,8 @@ class MainWindow(QMainWindow):
                            interval_seconds=self.interval.value(), timeout_ms=self.timeout.value(),
                            test_url=self.test_url.text().strip(), concurrency=self.concurrency.value(),
                            concurrency_auto=self.settings.concurrency_auto,
-                           minimum_switch_seconds=self.minimum_switch.value(), excluded_regions=list(self._excluded_regions),
+                           minimum_switch_seconds=self.minimum_switch.value(),
+                           excluded_regions=self.region_selector.selected_regions(),
                            close_to_tray=self.close_to_tray.isChecked(), save_secret=self.save_secret.isChecked(),
                            auto_enabled=self.controller.active)
         settings.validate()
@@ -480,63 +372,6 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.controller.settings = settings
         return settings
-
-    def _set_excluded_regions(self, regions):
-        self._excluded_regions = []
-        for region in regions:
-            self._append_region(region, render=False)
-        self._render_region_chips()
-
-    def _add_region_from_editor(self):
-        region = self.region_selector.currentText().strip()
-        if not region:
-            return
-        self._append_region(region)
-        self.region_selector.setCurrentText("")
-        self.region_selector.lineEdit().setFocus()
-
-    def _append_region(self, region, render=True):
-        if region and region not in self._excluded_regions:
-            self._excluded_regions.append(region)
-            if render:
-                self._render_region_chips()
-
-    def _render_region_chips(self):
-        while self.region_chips_layout.count():
-            item = self.region_chips_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        for region in self._excluded_regions:
-            chip = RegionChip(region, self.region_chips_widget)
-            chip.remove_requested.connect(self._remove_region)
-            self.region_chips_layout.addWidget(chip)
-        self.region_chips_widget.updateGeometry()
-
-    def _remove_region(self, region):
-        if region not in self._excluded_regions:
-            return
-        self._excluded_regions.remove(region)
-        for index in range(self.region_chips_layout.count()):
-            item = self.region_chips_layout.itemAt(index)
-            chip = item.widget()
-            if chip and getattr(chip, "region", None) == region:
-                effect = QGraphicsOpacityEffect(chip)
-                chip.setGraphicsEffect(effect)
-                animation = QPropertyAnimation(effect, b"opacity", chip)
-                animation.setDuration(150)
-                animation.setStartValue(1.0)
-                animation.setEndValue(0.0)
-                animation.setEasingCurve(QEasingCurve.OutCubic)
-                animation.finished.connect(lambda c=chip: self._remove_chip_widget(c))
-                chip._remove_animation = animation
-                animation.start()
-                break
-
-    def _remove_chip_widget(self, chip):
-        self.region_chips_layout.removeWidget(chip)
-        chip.deleteLater()
-        self.region_chips_widget.updateGeometry()
 
     def _concurrency_edited(self):
         if not self._concurrency_internal:
@@ -642,6 +477,11 @@ class MainWindow(QMainWindow):
 
     def _populate_members(self):
         group = self.proxies.get(self.settings.group, {})
+        try:
+            members = group_members(self.settings.group, self.proxies)
+        except ApiError:
+            members = []
+        self.region_selector.set_available_regions(available_regions(members))
         self.table.setRowCount(0)
         for name in group.get("all", []):
             if not isinstance(name, str):
@@ -679,6 +519,8 @@ class MainWindow(QMainWindow):
         self.traffic_label.setToolTip(traffic.detail)
 
     def _result(self, result):
+        if result.group == self.settings.group:
+            self.region_selector.set_available_regions(available_regions([item.name for item in result.measurements]))
         self.table.setRowCount(0)
         self.node.setText(result.current or "状态无法确认")
         active = next((x for x in result.measurements if x.name == result.current), None)

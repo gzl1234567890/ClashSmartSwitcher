@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import tomllib
 import zipfile
 
 root = Path(__file__).resolve().parent.parent
@@ -12,7 +13,9 @@ subprocess.run([str(exe), "--smoke-test", "--data-dir", str(root / "verification
                 "--screenshot", str(root / "verification" / "packaged-ui.png")], check=True, timeout=30)
 shutil.copy2(root / "README.md", folder / "README.md")
 shutil.copytree(root / "docs", folder / "使用说明", dirs_exist_ok=True)
-archive = root / "dist" / "ClashSmartSwitcher-1.1.0-windows-x64.zip"
+with (root / "pyproject.toml").open("rb") as source:
+    version = tomllib.load(source)["project"]["version"]
+archive = root / "dist" / f"ClashSmartSwitcher-{version}-windows-x64.zip"
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as output:
     for path in sorted(folder.rglob("*")):
         if path.is_file():
