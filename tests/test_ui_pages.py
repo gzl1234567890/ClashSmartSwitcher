@@ -327,6 +327,32 @@ def test_preview_is_limited_and_results_preserve_view_state(window, qtbot):
     assert window.node.text() == "美国"
 
 
+def test_repeated_results_reuse_items_and_clear_previous_state(window):
+    connect(window)
+    first = RoundResult("组", "美国", [Measurement("美国", 80),
+                        Measurement("德国", None, "超时", "德国")], "第一次")
+    window._result(first)
+    cells = [[window.table.item(row, col) for col in range(4)] for row in range(2)]
+    preview = [[window.overview_table.item(row, col) for col in range(3)] for row in range(2)]
+    second = RoundResult("组", "德国", [Measurement("美国", 180), Measurement("德国", 70)], "第二次")
+    for _ in range(100):
+        window._result(second)
+    for row in range(2):
+        assert all(window.table.item(row, col) is cells[row][col] for col in range(4))
+        assert all(window.overview_table.item(row, col) is preview[row][col] for col in range(3))
+    assert window.table.item(0, 0).data(Qt.BackgroundRole) is None
+    assert window.table.item(1, 0).data(Qt.BackgroundRole) is not None
+    assert window.table.item(1, 2).toolTip() == "正常"
+    assert window.overview_table.item(0, 2).text() == "延迟偏高"
+    assert window.overview_table.item(1, 2).text() == "当前使用"
+    window.table.setCurrentCell(0, 0)
+    window._result(RoundResult("组", "德国", [Measurement("德国", 90)], "缩减"))
+    assert window.table.rowCount() == window.overview_table.rowCount() == 1
+    assert window.table.currentRow() == -1 and not window.table.selectedItems()
+    window._result(RoundResult("组", "", [], "空结果"))
+    assert window.table.rowCount() == window.overview_table.rowCount() == 0
+
+
 def test_history_exclusions_and_compact_timestamp(window):
     client = connect(window)
     result = window.controller.engine.run(client, window.settings, threading.Event(), False)

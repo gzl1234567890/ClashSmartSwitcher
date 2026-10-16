@@ -10,6 +10,7 @@ from smart_switcher.config import ConfigStore
 from smart_switcher import __version__
 from smart_switcher.instance import SingleInstance
 from smart_switcher.logging_service import setup_logging
+from smart_switcher.diagnostics import RuntimeDiagnostics
 from smart_switcher.ui import MainWindow
 from smart_switcher.theme import interface_font, load_app_fonts
 
@@ -39,6 +40,7 @@ def main():
     app.setApplicationVersion(__version__)
     app.setOrganizationName("ClashSmartSwitcher")
     app.setQuitOnLastWindowClosed(False)
+    diagnostics = None
     try:
         load_app_fonts()
         app.setFont(interface_font())
@@ -49,7 +51,9 @@ def main():
         app.aboutToQuit.connect(instance.release)
         settings = store.load()
         logger, redactor = setup_logging(store.directory / "logs")
+        diagnostics = RuntimeDiagnostics(store.directory / "logs", logger, app)
         window = MainWindow(store, settings, logger, redactor)
+        diagnostics.controller = window.controller
         mark("window-created")
         instance.show_requested.connect(window.show_window)
         window.show()
@@ -66,11 +70,14 @@ def main():
             QTimer.singleShot(200, window.start_auto if settings.auto_enabled else window.connect_api)
         code = app.exec()
         mark("event-loop-exit")
+        diagnostics.close(code, requested=window.exiting)
         for handler in logger.handlers[:]:
             handler.close()
             logger.removeHandler(handler)
         return code
     except Exception as exc:
+        if diagnostics is not None:
+            diagnostics.close(1)
         if args.smoke_test:
             import traceback
             traceback.print_exc()

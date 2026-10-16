@@ -2,7 +2,7 @@ from copy import deepcopy
 import threading
 import time
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal, Slot
 
 from .api import ApiError, MihomoClient
 from .core import SwitchEngine, controllable_groups, group_members
@@ -64,23 +64,33 @@ class MonitorController(QObject):
         self._outcome = None
         self._failure = ""
         thread = TaskThread(operation, self)
-        thread.completed.connect(self._received)
-        thread.failed.connect(self._failed)
+        thread.kind, thread.start_after = kind, start_after
+        thread.completed.connect(self._received, Qt.QueuedConnection)
+        thread.failed.connect(self._failed, Qt.QueuedConnection)
         thread.message.connect(self.message)
-        thread.finished.connect(lambda: self._finished(kind, start_after))
+        thread.finished.connect(self._task_finished, Qt.QueuedConnection)
         self.worker = thread
         self.busy_changed.emit(True)
         thread.start()
         return True
 
+    @Slot(object)
     def _received(self, value):
         self._outcome = value
 
+    @Slot(str)
     def _failed(self, message):
         self._failure = message
 
+    @Slot()
+    def _task_finished(self):
+        worker = self.worker
+        if worker is not None:
+            self._finished(worker.kind, worker.start_after)
+
     def _finished(self, kind, start_after):
         worker, self.worker = self.worker, None
+        worker.task = None
         worker.deleteLater()
         cancelled = self.cancel.is_set()
         self.busy_changed.emit(False)

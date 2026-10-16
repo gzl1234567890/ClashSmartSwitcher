@@ -1,7 +1,7 @@
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QThread, QTimer
 import pytest
 
 from smart_switcher.config import ConfigStore, Settings
@@ -90,6 +90,20 @@ def test_duplicate_instance_not_acquired_and_existing_window_notified(qtbot, tmp
     first.release()
     assert second.acquire()
     second.release()
+
+
+def test_worker_completion_and_deletion_stay_on_controller_thread(qtbot):
+    from smart_switcher.monitor import TaskThread
+    subject = controller(qtbot)
+    callback_threads = []
+    subject.result.connect(lambda _: callback_threads.append(QThread.currentThread()))
+    for _ in range(20):
+        subject.run_round(automatic=False)
+        qtbot.waitUntil(lambda: not subject.busy)
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        assert subject.findChildren(TaskThread) == []
+    assert len(callback_threads) == 20
+    assert all(thread == subject.thread() for thread in callback_threads)
 
 
 def test_ui_has_no_fake_nodes_and_accepts_real_results(qtbot, tmp_path):

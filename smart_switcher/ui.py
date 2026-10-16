@@ -403,17 +403,17 @@ class MainWindow(QMainWindow, WindowLayout):
         selected_name = self.table.item(selected_row, 0).text() if selected_row >= 0 else None
         scroll_value = self.table.verticalScrollBar().value()
         self.table.setUpdatesEnabled(False)
-        self.table.setRowCount(0)
+        self.table.setRowCount(len(result.measurements))
         self.node.setText(result.current or "状态无法确认")
         active = next((x for x in result.measurements if x.name == result.current), None)
         self.delay.setText(f"{active.delay} ms" if active and active.delay is not None else "未知")
         tone = "success" if active and active.delay is not None and active.delay <= self.settings.threshold_ms else "warning"
         self.delay.setStyleSheet("color: " + ("#087f69" if tone == "success" else "#936010"))
-        for item in result.measurements:
+        for row, item in enumerate(result.measurements):
             remark = ("当前使用；" if item.name == result.current else "") + (f"已排除：{item.excluded}" if item.excluded else "候选节点")
             self._table_row(item.name, f"{item.delay} ms" if item.delay is not None else "无有效数据",
                             "正常" if item.delay is not None and item.delay <= self.settings.threshold_ms else ("延迟偏高" if item.delay else "测速失败"),
-                            remark, item.error)
+                            remark, item.error, row=row)
         self.table_caption.setText(f"{result.group} · {len(result.measurements)} 个节点")
         valid_count = sum(item.delay is not None for item in result.measurements)
         self.measure_context.setText(f"{valid_count} 个可用 · {len(result.measurements) - valid_count} 个测速失败")
@@ -432,6 +432,9 @@ class MainWindow(QMainWindow, WindowLayout):
                 if self.table.item(row, 0) and self.table.item(row, 0).text() == selected_name:
                     self.table.selectRow(row)
                     break
+            else:
+                self.table.clearSelection()
+                self.table.setCurrentCell(-1, -1)
         self.table.verticalScrollBar().setValue(min(scroll_value, self.table.verticalScrollBar().maximum()))
         self.table.setUpdatesEnabled(True)
         if result.traffic:
@@ -446,14 +449,19 @@ class MainWindow(QMainWindow, WindowLayout):
         self._sync_view_state()
 
     def _refresh_node_preview(self):
-        self.overview_table.setRowCount(0)
         node_rows = [row for row in range(self.table.rowCount())
                      if "策略 / 代理组容器" not in self.table.item(row, 3).text()]
-        for source in node_rows[:5]:
-            row = self.overview_table.rowCount()
-            self.overview_table.insertRow(row)
+        self.overview_table.setRowCount(min(5, len(node_rows)))
+        for row, source in enumerate(node_rows[:5]):
             for col in range(3):
-                item = self.table.item(source, col).clone()
+                original = self.table.item(source, col)
+                item = self.overview_table.item(row, col)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.overview_table.setItem(row, col, item)
+                for role in (Qt.DisplayRole, Qt.ToolTipRole, Qt.ForegroundRole,
+                             Qt.BackgroundRole, Qt.TextAlignmentRole):
+                    item.setData(role, original.data(role))
                 if col == 2 and "当前使用" in self.table.item(source, 3).text():
                     item.setText("当前使用")
                 elif col == 2 and "已排除" in self.table.item(source, 3).text():
@@ -461,7 +469,6 @@ class MainWindow(QMainWindow, WindowLayout):
                     item.setForeground(QColor(COLORS["muted"]))
                 if col == 2:
                     item.setToolTip(self.table.item(source, 3).text())
-                self.overview_table.setItem(row, col, item)
         self.preview_empty.setVisible(not node_rows)
         self.overview_table.setVisible(bool(node_rows))
 
@@ -470,20 +477,26 @@ class MainWindow(QMainWindow, WindowLayout):
         self.automation_node.setText("当前节点 · " + self.node.text())
         self.auto_context.setText(f"管理代理组 · {self.settings.group}" if self.settings.group else "尚未选择代理组")
 
-    def _table_row(self, name, delay, status, remark, error=""):
-        row = self.table.rowCount()
-        self.table.insertRow(row)
+    def _table_row(self, name, delay, status, remark, error="", row=None):
+        if row is None:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
         self.table.setRowHeight(row, 44)
         for col, text in enumerate((name, delay, status, remark)):
-            item = QTableWidgetItem(text)
+            item = self.table.item(row, col)
+            if item is None:
+                item = QTableWidgetItem()
+                self.table.setItem(row, col, item)
+            item.setText(text)
             item.setToolTip(error if col == 2 and error else text)
             if col == 1:
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             if "当前使用" in remark:
                 item.setBackground(QColor("#edf8f3"))
+            else:
+                item.setData(Qt.BackgroundRole, None)
             if col == 2:
                 item.setForeground(QColor(COLORS["accent"] if status == "正常" else "#a76508" if status == "延迟偏高" else COLORS["muted"]))
-            self.table.setItem(row, col, item)
 
     def _error(self, message):
         self.notice.setText(message, "error")

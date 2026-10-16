@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -34,10 +35,15 @@ with tempfile.TemporaryDirectory(prefix="packaged-", dir=verification) as isolat
     if "event-loop-exit" not in marker:
         raise SystemExit("Packaged application did not complete its event loop")
     (verification / "packaged-startup.txt").write_text(marker, encoding="utf-8")
+    status = Path(isolated, "logs", "runtime-status.json").read_text(encoding="utf-8")
+    runtime = json.loads(status)
+    if runtime.get("application") != version or not runtime.get("clean_exit"):
+        raise SystemExit("Packaged application version or clean exit check failed")
+    (verification / "packaged-runtime.json").write_text(status, encoding="utf-8")
 for name in ("README.md", "LICENSE", "CHANGELOG.md"):
     shutil.copy2(root / name, folder / name)
 (folder / "docs").mkdir(exist_ok=True)
-for name in ("HELP.md", "MANUAL_TESTS.md", "API_VERIFICATION.md", "VERIFICATION.md", "DEVELOPMENT.md"):
+for name in ("HELP.md", "MANUAL_TESTS.md", "API_VERIFICATION.md", "VERIFICATION.md", "DEVELOPMENT.md", "STABILITY.md"):
     shutil.copy2(root / "docs" / name, folder / "docs" / name)
 shutil.copytree(root / "docs" / "images", folder / "docs" / "images", dirs_exist_ok=True)
 archive = root / "dist" / f"ClashSmartSwitcher-{version}-windows-x64.zip"

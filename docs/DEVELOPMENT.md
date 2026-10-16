@@ -10,6 +10,7 @@ Windows x64、Python 3.12，固定依赖见 `requirements*.txt`。`requirements-
 `api`/`discovery` 负责本机接口，`core` 保持决策逻辑，`monitor` 管理线程与取消。
 `ui` 维护草稿、已应用规则和重连意图；`ui_layout` 仅负责页面组成，切页不能启动任务。
 `theme` 集中字体与样式，`motion` 集中动画偏好、时长和销毁清理。
+`diagnostics` 只记录本地运行指标、退出标记和不含变量值的故障调用位置。
 保持当前模块规模，不因目录整理改变 Mihomo 接口或配置格式。
 
 ## 本地验证
@@ -47,6 +48,11 @@ python scripts/capture_ui.py --scale 150 --base-scale 150
 UI 固定等待用原生 `QTest.qWait`；信号与任务等待仍检查实际条件。曾在 pytest-qt
 临时嵌套事件循环中复现 PySide 原生访问异常，因此另用 `QApplication.exec()` 的
 100 次长节点更新检查真实运行路径；这不等同于长期或跨电脑稳定性证明。
+
+多轮后台任务及表格生命周期回归使用 `scripts/soak_ui.py`，每轮经过真实
+MonitorController / QThread / SwitchEngine，FakeClient 不访问真实接口。
+脚本定期采样内存、线程、句柄与清理状态，支持节点增减、隐藏恢复及最低持续时长。
+命令、崩溃复现和长期验证边界见 [稳定性记录](STABILITY.md)。
 
 ## 构建与资源
 
