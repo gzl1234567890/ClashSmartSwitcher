@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="packaged-", dir=verification) as isolat
 for name in ("README.md", "LICENSE", "CHANGELOG.md"):
     shutil.copy2(root / name, folder / name)
 (folder / "docs").mkdir(exist_ok=True)
-for name in ("HELP.md", "MANUAL_TESTS.md", "API_VERIFICATION.md", "VERIFICATION.md", "DEVELOPMENT.md", "STABILITY.md"):
+for name in ("HELP.md", "MANUAL_TESTS.md", "API_VERIFICATION.md", "VERIFICATION.md", "DEVELOPMENT.md", "STABILITY.md", "UI_VERIFICATION.md"):
     shutil.copy2(root / "docs" / name, folder / "docs" / name)
 shutil.copytree(root / "docs" / "images", folder / "docs" / "images", dirs_exist_ok=True)
 archive = root / "dist" / f"ClashSmartSwitcher-{version}-windows-x64.zip"

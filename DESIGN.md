@@ -156,7 +156,9 @@ appropriate for menus and the region selector.
 
 Use the control radius for buttons, fields, and status badges; use the surface
 radius for repeated metric surfaces and genuinely framed tools. Buttons and
-fields have a 36px minimum and 40px maximum QSS height. Table rows are 42px.
+fields have a shared 38px outer height. Sidebar rows are 48px, with a stable
+transparent border and 12px content inset in every state. Table rows and headers
+are 44px; the five-row preview reserves six rows including its header.
 Keep icons consistently sized and preserve Qt's working spin-box subcontrols.
 The region selector retains its existing compact chip and popup corner values.
 
@@ -169,6 +171,8 @@ The region selector retains its existing compact chip and popup corner values.
   dimensions. Local Lucide SVG assets provide icons; icon-only controls require
   tooltips and accessible names. Text fields, combos, and numeric steppers expose
   focus, hover, and disabled states.
+  Split button painting must resolve `SE_PushButtonContents` before drawing the
+  icon/text label, so QSS padding is respected. Shared command icons are 18px.
 - **Overview:** six current-state metrics, real latency history, connection
   detail, the first five genuine direct-node rows in the selected group's order,
   and the latest five log entries. The trend accepts only genuine measurements
@@ -177,6 +181,10 @@ The region selector retains its existing compact chip and popup corner values.
   state. Search filters displayed rows without altering the measurement or
   automation scope. Keep prior results visible while measuring and identify
   their age. Preserve row selection and scroll during result updates.
+  Latency numbers align right; unmeasured/unavailable placeholders and status
+  text align centrally. Native tooltips center text with 8px/12px padding.
+  Show tooltips immediately without Windows roll/fade effects that expose a
+  clipped intermediate text surface; other shared feedback remains unchanged.
 - **Automation:** explicit current state, start/pause/stop commands, current
   rules, and switch history. Derive availability from the shared controller.
 - **Feedback:** use the inline `NoticePanel` for connection and operation

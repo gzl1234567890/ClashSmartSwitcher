@@ -6,8 +6,8 @@ from functools import partial
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QImage, QPainter, QRawFont, QTextLayout
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QImage, QPainter, QRawFont, QTextLayout
+from PySide6.QtWidgets import QApplication, QMessageBox, QToolTip
 from PySide6.QtTest import QTest
 
 from smart_switcher.config import ConfigStore, Settings
@@ -19,7 +19,7 @@ from smart_switcher.status import TrafficState
 from smart_switcher.ui import MainWindow
 from tests.fakes import FakeClient
 from smart_switcher import motion
-from smart_switcher.theme import FONT_FAMILY, font_families, load_app_fonts
+from smart_switcher.theme import CONTROL_HEIGHT, FONT_FAMILY, TABLE_ROW_HEIGHT, font_families, load_app_fonts
 from smart_switcher.ui_components import icon, set_tone
 
 
@@ -61,6 +61,64 @@ def test_release_version_matches_project_and_sidebar(window):
     assert window.sidebar_version.text() == f"v{__version__}"
     connect(window)
     assert window.sidebar_version.text() == f"v{__version__}"
+
+
+def test_sidebar_icons_have_visible_inset_in_all_navigation_states(window):
+    for index, button in enumerate(window.nav_buttons):
+        window.navigate(index)
+        button.setFocus()
+        QTest.qWait(180)
+        assert button.height() == 48
+        image = button.grab().toImage()
+        dpr = image.devicePixelRatio()
+        ink = [(x, y) for y in range(image.height()) for x in range(round(32 * dpr))
+               if image.pixelColor(x, y).alpha() > 240 and
+               image.pixelColor(x, y).blue() < 195 and
+               image.pixelColor(x, y).blue() > image.pixelColor(x, y).green() + 8 and
+               image.pixelColor(x, y).green() > image.pixelColor(x, y).red() + 8]
+        assert ink, button.text()
+        assert min(x for x, y in ink) >= 12 * dpr, button.text()
+        assert max(y for x, y in ink) - min(y for x, y in ink) >= 8 * dpr
+
+
+def test_unmeasured_cells_and_tooltip_are_centered(window):
+    connect(window)
+    window.navigate(1)
+    QTest.qWait(180)
+    assert window.table.item(0, 1).textAlignment() == Qt.AlignCenter
+    assert window.table.item(0, 2).textAlignment() == Qt.AlignCenter
+    position = window.table.visualItemRect(window.table.item(0, 1)).center()
+    QApplication.sendEvent(window.table.viewport(), QHelpEvent(
+        QEvent.ToolTip, position, window.table.viewport().mapToGlobal(position)))
+    QTest.qWait(30)
+    try:
+        tooltip = next(widget for widget in QApplication.topLevelWidgets()
+                       if widget.objectName() == "qtooltip_label" and widget.isVisible())
+        image = tooltip.grab().toImage()
+        image.save(str(window.store.directory / "tooltip.png"))
+        ink = [(x, y) for y in range(image.height()) for x in range(image.width())
+               if min(image.pixelColor(x, y).red(), image.pixelColor(x, y).green(),
+                      image.pixelColor(x, y).blue()) > 210]
+        assert ink
+        for axis, size in ((0, image.width()), (1, image.height())):
+            low, high = min(p[axis] for p in ink), max(p[axis] for p in ink)
+            assert low >= 6 * image.devicePixelRatio()
+            assert abs((low + high) / 2 - (size - 1) / 2) <= 2 * image.devicePixelRatio()
+    finally:
+        QToolTip.hideText()
+    window._result(RoundResult("组", "美国", [Measurement("美国", 87)], "完成"))
+    assert window.table.item(0, 1).textAlignment() == Qt.AlignRight | Qt.AlignVCenter
+    assert window.overview_table.item(0, 2).textAlignment() == Qt.AlignCenter
+
+
+def test_shared_control_and_table_dimensions_are_consistent(window):
+    connect(window)
+    for field in (window.group, window.node_search, window.address, window.secret,
+                  window.threshold, window.interval, window.timeout, window.minimum_switch):
+        assert field.height() == CONTROL_HEIGHT, field.accessibleName()
+    assert window.header_status.alignment() == Qt.AlignCenter
+    assert window.table.rowHeight(0) == window.overview_table.rowHeight(0) == TABLE_ROW_HEIGHT
+    assert window.table.horizontalHeader().height() == TABLE_ROW_HEIGHT
 
 
 def test_settings_are_editable_while_automation_waits_and_runs(window, qtbot):

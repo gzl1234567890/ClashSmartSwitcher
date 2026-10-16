@@ -17,7 +17,9 @@ parser.add_argument("--output-dir", type=Path)
 args = parser.parse_args()
 os.environ["QT_SCALE_FACTOR"] = str(int(args.scale) / args.base_scale)
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QPoint
+from PySide6.QtGui import QHelpEvent
+from PySide6.QtWidgets import QApplication, QToolTip
 from PySide6.QtTest import QTest
 from smart_switcher.config import ConfigStore, Settings
 from smart_switcher.core import SwitchEngine
@@ -40,6 +42,21 @@ client = FakeClient()
 window.controller.client = client
 window._connected({"proxies": client.proxies(), "groups": ["组"], "version": "mock-test",
                    "traffic": TrafficState(True, False)})
+window.navigate(1)
+QTest.qWait(220)
+window.grab().save(str(directory / "unmeasured.png"))
+cell = window.table.visualItemRect(window.table.item(0, 1))
+position = cell.center()
+QTest.mouseMove(window.table.viewport(), position)
+QApplication.sendEvent(window.table.viewport(), QHelpEvent(
+    QEvent.ToolTip, position, window.table.viewport().mapToGlobal(position)))
+QTest.qWait(80)
+window.grab().save(str(directory / "unmeasured-hover.png"))
+for widget in QApplication.topLevelWidgets():
+    if widget.objectName() == "qtooltip_label" and widget.isVisible():
+        widget.grab().save(str(directory / "unmeasured-tooltip.png"))
+QToolTip.hideText()
+QTest.mouseMove(window.sidebar, QPoint(100, 5))
 engine = SwitchEngine(lambda c: TrafficState(True, False))
 for delay in (125, 110, 87, 98, 103):
     client.delays["美国"] = delay

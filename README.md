@@ -4,10 +4,11 @@ Python + PySide6 开发的独立 Windows 桌面工具，使用 Mihomo 官方本�
 
 ## 直接运行
 
-当前版本为 **3.1.0 稳定性修复**。3.0.0 多轮运行原生崩溃的
+当前版本为 **3.1.1 UI 修复**，修正图标裁切、未测速与提示框对齐，并统一控件尺寸和间距。
+实际验证见 [UI 验证记录](docs/UI_VERIFICATION.md)。3.0.0 多轮运行原生崩溃的
 复现与修复验证见 [稳定性记录](docs/STABILITY.md)，本地修复包由当前源码重新构建。
 
-从 [V3.1.0 Release](https://github.com/gzl1234567890/ClashSmartSwitcher/releases/tag/v3.1.0) 下载 `ClashSmartSwitcher-3.1.0-windows-x64.zip`。解压到新目录后双击 `ClashSmartSwitcher.exe`，请保留同目录的 `_internal` 文件夹，不要只复制 EXE。分发包自带 Python 与 Qt，使用者不需要安装 Python。
+从 [V3.1.1 Release](https://github.com/gzl1234567890/ClashSmartSwitcher/releases/tag/v3.1.1) 下载 `ClashSmartSwitcher-3.1.1-windows-x64.zip`。先从托盘退出旧程序，再解压到新目录并双击 `ClashSmartSwitcher.exe`，请保留同目录的 `_internal` 文件夹，不要只复制 EXE。分发包自带 Python 与 Qt，使用者不需要安装 Python。
 
 1. 先运行 Clash Verge。
 2. 软件启动后尝试自动连接；未连接时点击“自动发现”。
@@ -93,7 +94,7 @@ conda create --prefix .\.conda\clash-smart-switcher python=3.12 pip -y
 .\.conda\clash-smart-switcher\python.exe scripts\package_release.py
 ```
 
-输出：`dist\ClashSmartSwitcher\ClashSmartSwitcher.exe`、`dist\ClashSmartSwitcher-3.1.0-windows-x64.zip` 及 `.zip.sha256` 校验文件。程序未做商业代码签名，Windows 可能显示“未知发布者”；请核对来源及 SHA256。构建脚本只打包程序、允许列表中的说明和许可证，不打包开发测试数据、个人配置、Conda 环境或运行日志。
+输出：`dist\ClashSmartSwitcher\ClashSmartSwitcher.exe`、`dist\ClashSmartSwitcher-3.1.1-windows-x64.zip` 及 `.zip.sha256` 校验文件。程序未做商业代码签名，Windows 可能显示“未知发布者”；请核对来源及 SHA256。构建脚本只打包程序、允许列表中的说明和许可证，不打包开发测试数据、个人配置、Conda 环境或运行日志。
 
 ## 项目结构
 
@@ -124,6 +125,7 @@ docs/
   DEVELOPMENT.md              模块边界、验证及构建复现方法
   VERIFICATION.md             V3.0.0 字体与发布验证记录
   STABILITY.md                3.1.0 崩溃复现、修复与验证边界
+  UI_VERIFICATION.md          3.1.1 图标、对齐、间距与发布验证
 verification/                 本地生成的测试/截图/归档，Git 忽略
 build.bat, run.bat             Windows 构建与运行入口
 ClashSmartSwitcher.spec        发布资源允许列表与 EXE 版本信息

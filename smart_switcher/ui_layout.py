@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .config import MAX_CONCURRENCY
 from .region_select import RegionMultiSelect
-from .theme import COLORS, interface_font
+from .theme import COLORS, CONTROL_HEIGHT, ICON_SIZE, SPACE, TABLE_ROW_HEIGHT, interface_font
 from .ui_components import ElidedLabel, LatencyTrendWidget, NoticePanel, StatusBadge, icon, resource_path
 from .motion import MotionButton
 
@@ -30,7 +30,10 @@ class WindowLayout:
     def button(self, text, symbol, callback, primary=False, quiet=False):
         button = MotionButton(text)
         button.setIcon(icon(symbol, "#ffffff" if primary else COLORS["muted"]))
-        button.setIconSize(QSize(17, 17))
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        button.setFixedHeight(CONTROL_HEIGHT)
+        if not text:
+            button.setFixedWidth(CONTROL_HEIGHT)
         button.setCursor(Qt.PointingHandCursor)
         button.setToolTip(text)
         button.setAccessibleName(text)
@@ -45,15 +48,18 @@ class WindowLayout:
         label.setObjectName(name)
         label.setTextFormat(Qt.PlainText)
         label.setWordWrap(wrap)
+        if name == "badge":
+            label.setAlignment(Qt.AlignCenter)
         return label
 
     def _panel(self, title, action=None):
         panel = QFrame()
         panel.setObjectName("dashboardPanel")
         box = QVBoxLayout(panel)
-        box.setContentsMargins(16, 16, 16, 16)
-        box.setSpacing(12)
+        box.setContentsMargins(*([SPACE["group"]] * 4))
+        box.setSpacing(SPACE["control"])
         heading = QHBoxLayout()
+        heading.setSpacing(SPACE["small"])
         heading.addWidget(self.label(title, "section"), 1)
         if action:
             heading.addWidget(action)
@@ -69,7 +75,7 @@ class WindowLayout:
         content.setObjectName("pageCanvas")
         box = QVBoxLayout(content)
         box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(16)
+        box.setSpacing(SPACE["section"])
         scroll.setWidget(content)
         return scroll, box
 
@@ -105,6 +111,7 @@ class WindowLayout:
             button = self.button(self.PAGE_TITLES[index][1], symbol,
                                  lambda checked=False, target=index: self.navigate(target))
             button.setObjectName("sidebarNav")
+            button.setFixedHeight(48)
             button.setCheckable(True)
             self.nav_buttons.append(button)
             side.addWidget(button)
@@ -119,9 +126,10 @@ class WindowLayout:
         main = QWidget()
         main.setObjectName("appMain")
         body = QVBoxLayout(main)
-        body.setContentsMargins(24, 24, 24, 12)
-        body.setSpacing(16)
+        body.setContentsMargins(SPACE["page"], SPACE["page"], SPACE["page"], SPACE["control"])
+        body.setSpacing(SPACE["section"])
         header = QHBoxLayout()
+        header.setSpacing(SPACE["small"])
         self.page_title = self.label("运行总览", "pageTitle")
         header.addWidget(self.page_title, 1)
         self.header_status = self.label("接口未连接", "badge")
@@ -196,6 +204,10 @@ class WindowLayout:
         root_layout.addWidget(main, 1)
         self.tabs.currentChanged.connect(self._page_changed)
         self._page_changed(0)
+        for field in self.findChildren(QWidget):
+            if isinstance(field, (QLineEdit, QComboBox, QSpinBox)) and field.objectName() != "regionSearch":
+                if not isinstance(field.parentWidget(), QSpinBox):
+                    field.setFixedHeight(CONTROL_HEIGHT)
         self._arrange_actions()
         self.statusBar().hide()
 
@@ -246,10 +258,12 @@ class WindowLayout:
             card = QFrame()
             card.setObjectName("metricCard")
             box = QVBoxLayout(card)
-            box.setContentsMargins(16, 16, 16, 16)
-            box.setSpacing(8)
+            box.setContentsMargins(*([SPACE["group"]] * 4))
+            box.setSpacing(SPACE["small"])
             heading = QHBoxLayout()
+            heading.setSpacing(SPACE["small"])
             glyph = QLabel()
+            glyph.setFixedSize(ICON_SIZE, ICON_SIZE)
             glyph.setPixmap(icon(symbol, COLORS["accent"]).pixmap(18, 18))
             heading.addWidget(glyph)
             heading.addWidget(self.label(title, "metricTitle"), 1)
@@ -316,8 +330,11 @@ class WindowLayout:
         table.setWordWrap(False)
         table.setTextElideMode(Qt.ElideRight)
         table.verticalHeader().hide()
-        table.verticalHeader().setDefaultSectionSize(42)
+        table.verticalHeader().setDefaultSectionSize(TABLE_ROW_HEIGHT)
+        table.horizontalHeader().setFixedHeight(TABLE_ROW_HEIGHT)
         table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        table.horizontalHeaderItem(1).setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        table.horizontalHeaderItem(2).setTextAlignment(Qt.AlignCenter)
         table.horizontalHeader().setMinimumSectionSize(64)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         if not preview:
@@ -325,7 +342,7 @@ class WindowLayout:
         table.setColumnWidth(1, 94)
         table.setColumnWidth(2, 100)
         if preview:
-            table.setFixedHeight(246)
+            table.setFixedHeight(TABLE_ROW_HEIGHT * 6)
         else:
             table.setMinimumHeight(180)
         return table
@@ -338,6 +355,7 @@ class WindowLayout:
         self.measure_context = self.label("尚无测速结果", "section", wrap=True)
         page.addWidget(self.measure_context)
         row = QHBoxLayout()
+        row.setSpacing(SPACE["small"])
         self.table_caption = self.label("当前代理组 · 候选节点", "fieldLabel", wrap=True)
         row.addWidget(self.table_caption, 1)
         self.node_search = QLineEdit()
@@ -366,6 +384,7 @@ class WindowLayout:
         empty_layout.addWidget(self.empty_title)
         empty_layout.addWidget(self.empty_detail)
         empty_actions = QHBoxLayout()
+        empty_actions.setSpacing(SPACE["small"])
         empty_actions.addStretch()
         self.empty_discover = self.button("自动发现", "radar", self.discover_api)
         self.empty_settings = self.button("连接设置", "settings-2", lambda: self.navigate(4), quiet=True)
@@ -437,6 +456,7 @@ class WindowLayout:
         page.setContentsMargins(0, 0, 0, 0)
         page.setSpacing(16)
         line = QHBoxLayout()
+        line.setSpacing(SPACE["small"])
         self.follow_logs = QCheckBox("跟随最新")
         self.follow_logs.setChecked(True)
         self.follow_logs.setToolTip("向上滚动阅读历史时停止跟随")
@@ -538,6 +558,7 @@ class WindowLayout:
         save_bar = QWidget()
         save_bar.setObjectName("saveBar")
         save = QHBoxLayout(save_bar)
+        save.setSpacing(SPACE["small"])
         save.setContentsMargins(16, 12, 16, 12)
         self.settings_feedback = self.label("设置已载入", wrap=True)
         save.addWidget(self.settings_feedback, 1)

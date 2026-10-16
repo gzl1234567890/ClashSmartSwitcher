@@ -23,7 +23,7 @@ from .region_select import RegionMultiSelect
 from .status import TrafficState
 
 
-from .theme import COLORS, apply_interface_typography, interface_font, load_app_fonts, stylesheet
+from .theme import COLORS, TABLE_ROW_HEIGHT, apply_interface_typography, interface_font, load_app_fonts, stylesheet
 from .ui_components import icon, resource_path, set_tone
 from .ui_layout import WindowLayout
 from .motion import MotionController, is_settings_message
@@ -52,6 +52,9 @@ class MainWindow(QMainWindow, WindowLayout):
         self.setMinimumSize(850, 630)
         load_app_fonts()
         self.setFont(interface_font())
+        # Windows tooltip roll-in exposes a cropped intermediate text surface.
+        QApplication.setEffectEnabled(Qt.UI_AnimateTooltip, False)
+        QApplication.setEffectEnabled(Qt.UI_FadeTooltip, False)
         self.setWindowIcon(QIcon(str(resource_path("resources/app.ico"))))
         QDir.addSearchPath("uiicons", str(resource_path("resources/icons/lucide")))
         self.setStyleSheet(stylesheet())
@@ -481,7 +484,7 @@ class MainWindow(QMainWindow, WindowLayout):
         if row is None:
             row = self.table.rowCount()
             self.table.insertRow(row)
-        self.table.setRowHeight(row, 44)
+        self.table.setRowHeight(row, TABLE_ROW_HEIGHT)
         for col, text in enumerate((name, delay, status, remark)):
             item = self.table.item(row, col)
             if item is None:
@@ -490,7 +493,9 @@ class MainWindow(QMainWindow, WindowLayout):
             item.setText(text)
             item.setToolTip(error if col == 2 and error else text)
             if col == 1:
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                item.setTextAlignment((Qt.AlignRight | Qt.AlignVCenter) if text.endswith(" ms") else Qt.AlignCenter)
+            elif col == 2:
+                item.setTextAlignment(Qt.AlignCenter)
             if "当前使用" in remark:
                 item.setBackground(QColor("#edf8f3"))
             else:

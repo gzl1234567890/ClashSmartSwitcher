@@ -13,7 +13,10 @@ COLORS = {
     "warning_bg": "#fff6e5", "error": "#b23f38", "error_bg": "#fff0ed",
 }
 TYPE = {"small": 13, "body": 15, "section": 17, "heading": 26, "metric": 28}
-SPACE = {"small": 8, "group": 16, "section": 16, "page": 24}
+SPACE = {"small": 8, "control": 12, "group": 16, "section": 16, "page": 24}
+CONTROL_HEIGHT = 38
+ICON_SIZE = 18
+TABLE_ROW_HEIGHT = 44
 FONT_FAMILY = "Clash Sans SC"
 FONT_FILES = ("ClashSansSC-Regular.ttf", "ClashSansSC-Medium.ttf",
               "ClashSansSC-SemiBold.ttf", "NotoSans-Regular.ttf")
@@ -95,7 +98,7 @@ QLabel#sidebarStatus {{ color: {c['muted']}; padding: 8px 4px; font-size: 13px; 
 QLabel#sidebarStatus[tone="success"] {{ color: {c['accent']}; }}
 QLabel#sidebarStatus[tone="warning"] {{ color: {c['warning']}; }}
 QLabel#sidebarVersion {{ color: {c['muted']}; padding: 0 4px; font-size: 12px; }}
-QPushButton#sidebarNav {{ text-align: left; border: none; border-radius: 8px; background: transparent; color: #38584e; padding: 10px 12px; min-height: 28px; font-size: 15px; }}
+QPushButton#sidebarNav {{ text-align: left; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #38584e; padding: 0 12px; min-height: 46px; max-height: 46px; font-size: 15px; }}
 QPushButton#sidebarNav:hover {{ background: #edf7f2; color: {c['accent']}; }}
 QPushButton#sidebarNav:checked {{ background: #e1f3ed; color: {c['accent']}; font-weight: 500; }}
 QPushButton#sidebarNav:focus {{ border: 1px solid #7bb69e; }}
@@ -165,7 +168,7 @@ QSplitter::handle:vertical {{ background: #edf2ee; height: 5px; margin: 2px 0; }
 QSplitter::handle:vertical:hover {{ background: #b9d0c2; }}
 QStatusBar {{ background: {c['background']}; color: {c['muted']}; font-size: {t['small']}px; }}
 QStatusBar::item {{ border: none; }}
-QToolTip {{ background: #173b31; color: white; border: none; padding: 6px 9px; }}
+QToolTip {{ background: #173b31; color: white; border: 1px solid #173b31; border-radius: 6px; padding: 8px 12px; qproperty-alignment: AlignCenter; }}
 QMenu {{ background: white; border: 1px solid {c['border']}; padding: 5px; }}
 QMenu::item {{ padding: 8px 22px; }}
 QMenu::item:selected {{ background: #e3f0e8; color: {c['text']}; }}

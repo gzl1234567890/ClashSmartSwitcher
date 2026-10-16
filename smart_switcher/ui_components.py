@@ -7,7 +7,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImageReader, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QStyle, QStyleOption, QWidget
 
-from .theme import COLORS
+from .theme import COLORS, SPACE
 from .motion import controller_for
 
 
@@ -123,8 +123,8 @@ class NoticePanel(QFrame):
         super().__init__(parent)
         self.setObjectName("noticePanel")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 9, 12, 9)
-        layout.setSpacing(9)
+        layout.setContentsMargins(SPACE["control"], SPACE["small"], SPACE["control"], SPACE["small"])
+        layout.setSpacing(SPACE["small"])
         self.symbol = QLabel()
         self.symbol.setFixedSize(18, 18)
         self.message = QLabel()

@@ -170,6 +170,7 @@ class MotionButton(QPushButton, FeedbackMixin):
         self._paint_feedback(painter)
         if self.busy_angle is not None:
             option.icon = QIcon()
+        option.rect = self.style().subElementRect(QStyle.SE_PushButtonContents, option, self)
         painter.drawControl(QStyle.CE_PushButtonLabel, option)
         if self.busy_angle is not None:
             painter.save()
