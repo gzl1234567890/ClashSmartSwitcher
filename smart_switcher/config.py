@@ -10,6 +10,10 @@ from urllib.parse import urlsplit
 
 
 MAX_CONCURRENCY = 256
+# Mihomo can handle more requests, but probing a whole subscription at once
+# makes slow nodes compete for connections and causes avoidable 504 results.
+AUTO_CONCURRENCY_CAP = 8
+RETRY_TIMEOUT_MS = 5000
 
 
 def data_directory() -> Path:

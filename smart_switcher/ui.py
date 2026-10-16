@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QDir, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFormLayout, QGridLayout, QHBoxLayout,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from .config import MAX_CONCURRENCY
+from .config import AUTO_CONCURRENCY_CAP, MAX_CONCURRENCY
 from .core import group_members, is_node
 from .api import ApiError
 from .monitor import MonitorController
@@ -23,54 +23,12 @@ from .region_select import RegionMultiSelect
 from .status import TrafficState
 
 
-STYLE = """
-QWidget { font-family: 'Microsoft YaHei UI', 'Segoe UI'; font-size: 13px; color: #24272e; }
-QMainWindow, QWidget#root { background: #f5f6f8; }
-QWidget#header { background: #242c3b; }
-QWidget#header QLabel { color: #f9fafc; background: transparent; }
-QLabel#title { font-size: 22px; font-weight: 600; }
-QLabel#muted { color: #616977; }
-QLabel#node { font-size: 18px; font-weight: 600; }
-QLabel#delay { font-size: 26px; font-weight: 600; color: #087f69; }
-QLabel#section { font-size: 14px; font-weight: 600; }
-QWidget#summary { background: white; border-bottom: 1px solid #dce0e7; }
-QTabWidget::pane { border: 1px solid #dce0e7; background: white; }
-QTabBar::tab { padding: 10px 20px; background: #e9ecf1; border-bottom: 2px solid transparent; }
-QTabBar::tab:selected { background: white; color: #087f69; border-bottom: 2px solid #087f69; }
-QPushButton { border: 1px solid #c6ccd5; border-radius: 5px; background: white; padding: 7px 13px; min-height: 21px; }
-QPushButton:hover { background: #eef4f2; border-color: #087f69; }
-QPushButton:pressed { background: #dceae5; }
-QPushButton:focus, QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 2px solid #087f69; }
-QPushButton#primary { background: #087f69; color: white; border-color: #087f69; }
-QPushButton#primary:hover { background: #096b5b; }
-QPushButton:disabled { background: #f0f1f4; color: #808692; border-color: #e0e3e8; }
-QLineEdit, QSpinBox, QComboBox { background: white; border: 1px solid #c6ccd5; border-radius: 4px; padding: 6px; min-height: 22px; }
-QComboBox::drop-down { width: 23px; border: none; }
-QCheckBox { spacing: 8px; }
-QTableWidget { background: white; border: none; alternate-background-color: #f6f8fa; gridline-color: #ebedf1; }
-QHeaderView::section { background: #f0f3f6; border: none; border-bottom: 1px solid #dce0e7; padding: 9px; font-weight: 600; }
-QTableWidget::item { padding: 5px; }
-QTableWidget::item:selected { background: #e2f2ed; color: #24272e; }
-QPlainTextEdit { border: 1px solid #dce0e7; background: #fafbfc; padding: 7px; }
-QTextBrowser { border: none; background: white; padding: 15px; }
-QLabel#notice { padding: 9px 12px; background: #eef4f2; color: #285248; border-radius: 4px; }
-QLabel#settingHint { color: #616977; padding-left: 8px; }
-QStatusBar { background: #edf0f4; }
-"""
+from .theme import COLORS, interface_font, stylesheet
+from .ui_components import icon, resource_path, set_tone
+from .ui_layout import WindowLayout
 
 
-def resource_path(relative):
-    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / relative
-
-
-class NoWheelSpinBox(QSpinBox):
-    """Keep the settings stable while the surrounding scroll area is wheeled."""
-
-    def wheelEvent(self, event):
-        event.ignore()
-
-
-class MainWindow(QMainWindow):
+class MainWindow(WindowLayout, QMainWindow):
     def __init__(self, store, settings, logger, redactor, controller=None):
         super().__init__()
         self.store, self.settings = store, settings
@@ -78,13 +36,19 @@ class MainWindow(QMainWindow):
         self.controller = controller or MonitorController(settings, parent=self)
         self.proxies = {}
         self.exiting = False
-        self.pending_start = False
         self._concurrency_internal = False
         self.setWindowTitle("Clash 智能节点管家")
-        self.resize(1120, 820)
+        self._settings_loading = True
+        self._appending_log = False
+        self._paused_by_user = False
+        self._task_status = "就绪"
+        self._last_result_time = None
+        self.resize(1180, 860)
         self.setMinimumSize(850, 630)
-        self.setWindowIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
-        self.setStyleSheet(STYLE)
+        self.setFont(interface_font())
+        self.setWindowIcon(QIcon(str(resource_path("resources/app.ico"))))
+        QDir.addSearchPath("uiicons", str(resource_path("resources/icons/lucide")))
+        self.setStyleSheet(stylesheet())
         self._build()
         self._tray()
         self.controller.connection.connect(self._connected)
@@ -95,224 +59,13 @@ class MainWindow(QMainWindow):
         self.controller.busy_changed.connect(self._busy)
         self.controller.idle.connect(self._idle)
         self._fill_settings()
+        self._settings_loading = False
+        self._saved_form = self._form_snapshot()
+        self._busy(self.controller.busy)
         self.append_log("程序启动；自动操作将在连接与代理状态检查通过后执行")
         if store.warning:
             self.append_log(store.warning)
             self.notice.setText(store.warning)
-
-    def button(self, text, icon, callback, primary=False):
-        button = QPushButton(text)
-        button.setIcon(self.style().standardIcon(icon))
-        button.setToolTip(text)
-        if primary:
-            button.setObjectName("primary")
-        button.clicked.connect(callback)
-        return button
-
-    def _build(self):
-        root = QWidget()
-        root.setObjectName("root")
-        self.setCentralWidget(root)
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        header = QWidget()
-        header.setObjectName("header")
-        bar = QHBoxLayout(header)
-        bar.setContentsMargins(24, 19, 24, 19)
-        title = QLabel("Clash 智能节点管家")
-        title.setObjectName("title")
-        bar.addWidget(title)
-        bar.addStretch()
-        self.header_status = QLabel("接口未连接")
-        bar.addWidget(self.header_status)
-        layout.addWidget(header)
-
-        summary = QWidget()
-        summary.setObjectName("summary")
-        grid = QGridLayout(summary)
-        grid.setContentsMargins(24, 17, 24, 17)
-        grid.setHorizontalSpacing(26)
-        grid.setVerticalSpacing(8)
-        self.node = QLabel("等待连接")
-        self.node.setObjectName("node")
-        self.node.setWordWrap(True)
-        self.delay = QLabel("未测速")
-        self.delay.setObjectName("delay")
-        self.auto_state = QLabel("已关闭")
-        self.auto_state.setObjectName("node")
-        for column, title in enumerate(("当前节点", "本轮延迟", "自动切换")):
-            label = QLabel(title)
-            label.setObjectName("muted")
-            grid.addWidget(label, 0, column)
-        grid.addWidget(self.node, 1, 0)
-        grid.addWidget(self.delay, 1, 1)
-        grid.addWidget(self.auto_state, 1, 2)
-        grid.setColumnStretch(0, 5)
-        grid.setColumnStretch(1, 2)
-        grid.setColumnStretch(2, 2)
-        self.traffic_label = QLabel("系统代理：状态无法确认    TUN：状态无法确认")
-        self.traffic_label.setObjectName("muted")
-        self.traffic_label.setWordWrap(True)
-        grid.addWidget(self.traffic_label, 2, 0, 1, 3)
-        layout.addWidget(summary)
-
-        content = QWidget()
-        body = QVBoxLayout(content)
-        body.setContentsMargins(24, 17, 24, 14)
-        body.setSpacing(12)
-        actions = QHBoxLayout()
-        self.group = QComboBox()
-        self.group.setMinimumWidth(210)
-        self.group.addItem("请选择代理组", "")
-        self.group.currentIndexChanged.connect(self._group_changed)
-        actions.addWidget(QLabel("代理组"))
-        actions.addWidget(self.group, 1)
-        self.start_button = self.button("开启自动切换", QStyle.SP_MediaPlay, self.start_auto, True)
-        self.pause_button = self.button("暂停", QStyle.SP_MediaPause, self.pause_auto)
-        self.stop_button = self.button("关闭", QStyle.SP_MediaStop, self.stop_auto)
-        self.measure_button = self.button("立即测速", QStyle.SP_BrowserReload, self.measure)
-        actions.addWidget(self.start_button)
-        actions.addWidget(self.pause_button)
-        actions.addWidget(self.stop_button)
-        actions.addWidget(self.measure_button)
-        body.addLayout(actions)
-        self.notice = QLabel("尚未连接本机控制接口")
-        self.notice.setObjectName("notice")
-        self.notice.setWordWrap(True)
-        self.notice.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        body.addWidget(self.notice)
-
-        self.tabs = QTabWidget()
-        panel = QWidget()
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(12, 12, 12, 12)
-        self.table_caption = QLabel("节点测速结果")
-        self.table_caption.setObjectName("section")
-        panel_layout.addWidget(self.table_caption)
-        splitter = QSplitter(Qt.Vertical)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["节点名称", "延迟", "测速状态", "备注"])
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for column, width in ((1, 110), (2, 115), (3, 230)):
-            self.table.setColumnWidth(column, width)
-        self.table.setMinimumHeight(140)
-        splitter.addWidget(self.table)
-        log_area = QWidget()
-        logs = QVBoxLayout(log_area)
-        logs.setContentsMargins(0, 8, 0, 0)
-        line = QHBoxLayout()
-        label = QLabel("运行日志")
-        label.setObjectName("section")
-        line.addWidget(label)
-        line.addStretch()
-        self.last_checked = QLabel("最近检测：尚未检测")
-        self.last_checked.setObjectName("muted")
-        line.addWidget(self.last_checked)
-        line.addWidget(self.button("日志目录", QStyle.SP_DirOpenIcon, self.open_logs))
-        line.addWidget(self.button("清空显示", QStyle.SP_TrashIcon, lambda: self.logs.clear()))
-        logs.addLayout(line)
-        self.logs = QPlainTextEdit()
-        self.logs.setReadOnly(True)
-        self.logs.setMaximumBlockCount(2000)
-        self.logs.setMinimumHeight(90)
-        logs.addWidget(self.logs)
-        splitter.addWidget(log_area)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        panel_layout.addWidget(splitter)
-        self.tabs.addTab(panel, "控制面板")
-        self._settings_page()
-        self.help = QTextBrowser()
-        self.help.setOpenExternalLinks(True)
-        help_path = resource_path("docs/HELP.md")
-        self.help.setMarkdown(help_path.read_text(encoding="utf-8") if help_path.exists() else "请查看分发包内的中文 README.md。")
-        self.tabs.addTab(self.help, "帮助与排查")
-        body.addWidget(self.tabs, 1)
-        footer = QHBoxLayout()
-        self.connect_button = self.button("重新检测连接", QStyle.SP_BrowserReload, self.connect_api)
-        self.discover_button = self.button("自动发现", QStyle.SP_FileDialogContentsView, self.discover_api)
-        footer.addWidget(self.connect_button)
-        footer.addWidget(self.discover_button)
-        footer.addStretch()
-        self.version_label = QLabel("本机控制接口 · 等待检测")
-        self.version_label.setObjectName("muted")
-        self.version_label.setMaximumWidth(300)
-        footer.addWidget(self.version_label)
-        footer.addWidget(self.button("退出", QStyle.SP_DialogCloseButton, self.request_exit))
-        body.addLayout(footer)
-        layout.addWidget(content, 1)
-        self.statusBar().showMessage("就绪")
-
-    def _settings_page(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        widget = QWidget()
-        form = QFormLayout(widget)
-        form.setContentsMargins(24, 20, 24, 20)
-        form.setVerticalSpacing(12)
-        self.settings_widget = widget
-        self.address = QLineEdit()
-        self.address.setPlaceholderText("自动发现，或填写 http://127.0.0.1:控制端口")
-        self.address.setToolTip("仅支持本机 HTTP/HTTPS 控制地址或 Mihomo 官方命名管道")
-        self.secret = QLineEdit()
-        self.secret.setEchoMode(QLineEdit.Password)
-        self.secret.setPlaceholderText("控制接口需要认证时填写")
-        form.addRow("控制接口地址", self.address)
-        form.addRow("控制密钥", self.secret)
-        self.threshold = self.spin(1, 60000, " ms")
-        self.interval = self.spin(5, 86400, " 秒")
-        self.timeout = self.spin(500, 30000, " ms")
-        self.concurrency = self.spin(1, MAX_CONCURRENCY, " 个")
-        self.minimum_switch = self.spin(0, 86400, " 秒")
-        self.concurrency.valueChanged.connect(self._concurrency_edited)
-        for label, control, low, high in (
-                ("延迟阈值", self.threshold, 1, 60000),
-                ("检测间隔", self.interval, 5, 86400),
-                ("单节点测速超时", self.timeout, 500, 30000),
-                ("并发测速数量", self.concurrency, 1, MAX_CONCURRENCY),
-                ("最小切换间隔", self.minimum_switch, 0, 86400)):
-            row = self.numeric_row(control, low, high)
-            if control is self.concurrency:
-                self.concurrency_hint = row.findChild(QLabel, "settingHint")
-            form.addRow(label, row)
-        self.test_url = QLineEdit()
-        form.addRow("测速地址", self.test_url)
-        self.region_selector = RegionMultiSelect()
-        form.addRow("排除地区", self.region_selector)
-        self.close_to_tray = QCheckBox("关闭窗口时最小化到托盘")
-        self.save_secret = QCheckBox("使用 Windows 账户加密保存密钥")
-        form.addRow("窗口行为", self.close_to_tray)
-        form.addRow("密钥保存", self.save_secret)
-        self.save_button = self.button("保存设置", QStyle.SP_DialogSaveButton, self.save_settings, True)
-        form.addRow("", self.save_button)
-        scroll.setWidget(widget)
-        self.tabs.addTab(scroll, "连接与设置")
-
-    @staticmethod
-    def spin(low, high, suffix):
-        control = NoWheelSpinBox()
-        control.setRange(low, high)
-        control.setSuffix(suffix)
-        control.setToolTip(f"可直接输入，或使用右侧箭头调整。允许范围：{low}–{high}")
-        return control
-
-    @staticmethod
-    def numeric_row(control, low, high):
-        row = QWidget()
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(control, 1)
-        hint = QLabel(f"范围：{low}–{high}")
-        hint.setObjectName("settingHint")
-        hint.setMinimumWidth(110)
-        layout.addWidget(hint)
-        return row
 
     def _tray(self):
         self.tray = QSystemTrayIcon(self.windowIcon(), self)
@@ -357,6 +110,62 @@ class MainWindow(QMainWindow):
         self.save_secret.setChecked(s.save_secret)
         self.redactor.secrets.add(s.secret)
 
+    def _form_snapshot(self):
+        return (
+            self.address.text(), self.secret.text(), self.threshold.value(),
+            self.interval.value(), self.timeout.value(), self.concurrency.value(),
+            self.minimum_switch.value(), self.test_url.text(),
+            tuple(self.region_selector.selected_regions()), self.close_to_tray.isChecked(),
+            self.save_secret.isChecked(),
+        )
+
+    def _settings_edited(self, *_):
+        if getattr(self, "_settings_loading", False):
+            return
+        changed = self._form_snapshot() != getattr(self, "_saved_form", ())
+        self.settings_feedback.setText("有未保存的修改" if changed else "设置已保存")
+        self.settings_feedback.setProperty("tone", "warning" if changed else "")
+        self.settings_feedback.style().unpolish(self.settings_feedback)
+        self.settings_feedback.style().polish(self.settings_feedback)
+
+    def _page_changed(self, index):
+        if index == 1:
+            self._settings_edited()
+
+    def _filter_nodes(self, query):
+        query = query.strip().casefold()
+        for row in range(self.table.rowCount()):
+            values = " ".join(
+                self.table.item(row, col).text() if self.table.item(row, col) else ""
+                for col in range(self.table.columnCount())
+            ).casefold()
+            self.table.setRowHidden(row, bool(query and query not in values))
+
+    def _toggle_logs(self):
+        visible = self.logs.isVisible()
+        self.logs.setVisible(not visible)
+        self.log_toggle.setText("运行日志" if visible else "收起日志")
+        self.log_toggle.setIcon(icon("chevron-right" if visible else "chevron-down"))
+        if not visible:
+            self.results_splitter.setSizes([380, 135])
+        else:
+            self.results_splitter.setSizes([510, 0])
+
+    def _clear_logs(self):
+        self.logs.clear()
+        self.statusBar().showMessage("已清空界面日志；文件日志未删除", 3000)
+
+    def _follow_log_changed(self, checked):
+        if checked:
+            self.logs.verticalScrollBar().setValue(self.logs.verticalScrollBar().maximum())
+
+    def _log_scrolled(self, value):
+        bar = self.logs.verticalScrollBar()
+        if value < bar.maximum() - 8 and self.follow_logs.isChecked():
+            self.follow_logs.blockSignals(True)
+            self.follow_logs.setChecked(False)
+            self.follow_logs.blockSignals(False)
+
     def _read_settings(self):
         settings = replace(self.settings, controller=self.address.text().strip(), secret=self.secret.text(),
                            group=(self.group.currentData() or "") if self.proxies else self.settings.group, threshold_ms=self.threshold.value(),
@@ -388,13 +197,13 @@ class MainWindow(QMainWindow):
         self._concurrency_internal = True
         self.concurrency.setRange(1, maximum)
         if count and (reset_to_node_count or self.settings.concurrency_auto):
-            self.concurrency.setValue(count)
+            self.concurrency.setValue(min(count, AUTO_CONCURRENCY_CAP))
         else:
             self.concurrency.setValue(min(self.concurrency.value(), maximum))
         self._concurrency_internal = False
         if count:
-            self.concurrency_hint.setText(f"当前代理组 {count} 个节点；范围：1–{count}")
-            self.concurrency.setToolTip(f"可直接输入，或使用右侧箭头调整。当前代理组有 {count} 个节点，允许范围：1–{count}")
+            self.concurrency_hint.setText(f"当前代理组 {count} 个节点；自动模式最多 {AUTO_CONCURRENCY_CAP} 个并发")
+            self.concurrency.setToolTip(f"自动模式最多 {AUTO_CONCURRENCY_CAP} 个并发；也可手动调整，当前代理组允许范围：1–{count}")
         else:
             self.concurrency_hint.setText("选择代理组后自动限制到节点数")
             self.concurrency.setToolTip("可直接输入，或使用右侧箭头调整。选择代理组后，最大值会自动限制为节点数")
@@ -403,7 +212,9 @@ class MainWindow(QMainWindow):
         try:
             self.store.save(self._read_settings())
             self.append_log("设置已保存；密钥使用 Windows 账户保护（如启用保存）")
-            self.notice.setText("设置已保存")
+            self._saved_form = self._form_snapshot()
+            self.settings_feedback.setText("设置已保存")
+            self.notice.setText("设置已保存", "success")
         except (OSError, ValueError) as exc:
             self._error(str(exc))
 
@@ -461,7 +272,7 @@ class MainWindow(QMainWindow):
                 if not group_members(selected, self.proxies):
                     raise ValueError("该组没有直接服务器节点，请选择其内部可控代理组")
             except (ValueError, ApiError) as exc:
-                self.notice.setText(str(exc))
+                self.notice.setText(str(exc), "error")
                 self.group.blockSignals(True)
                 self.group.setCurrentIndex(max(0, self.group.findData(self.settings.group)))
                 self.group.blockSignals(False)
@@ -473,6 +284,8 @@ class MainWindow(QMainWindow):
         self.node.setText(self.proxies.get(selected, {}).get("now", "未选择"))
         self._populate_members()
         self._sync_concurrency_limit(reset_to_node_count=bool(selected))
+        self.results_stack.setCurrentIndex(0 if selected else 1)
+        self.group_context.setText(selected or "选择一个代理组，开始管理节点")
         self._busy(False)
 
     def _populate_members(self):
@@ -490,6 +303,7 @@ class MainWindow(QMainWindow):
             remark = "策略 / 代理组容器" if not is_node(name, self.proxies) else (
                 f"已排除：{excluded}" if excluded else "候选节点")
             self._table_row(name, "未测速", "等待检测", ("当前使用；" if name == group.get("now") else "") + remark)
+        self.results_stack.setCurrentIndex(0 if self.table.rowCount() else 1)
 
     def _connected(self, data):
         self.settings = self.controller.settings
@@ -509,7 +323,8 @@ class MainWindow(QMainWindow):
         self.version_label.setText("Mihomo " + data["version"])
         self.version_label.setToolTip(self.settings.controller)
         self._traffic(data["traffic"])
-        self.notice.setText("接口连接成功" if self.settings.group else "接口连接成功；请选择需要管理的代理组")
+        self.notice.setText("接口连接成功" if self.settings.group else "接口连接成功；请选择需要管理的代理组", "success")
+        self.group_context.setText(self.settings.group or "选择一个代理组，开始管理节点")
         self._populate_members()
         self._sync_concurrency_limit()
         self._persist_runtime()
@@ -521,19 +336,33 @@ class MainWindow(QMainWindow):
     def _result(self, result):
         if result.group == self.settings.group:
             self.region_selector.set_available_regions(available_regions([item.name for item in result.measurements]))
+        selected_name = self.table.currentItem().text() if self.table.currentItem() else None
+        scroll_value = self.table.verticalScrollBar().value()
+        self.table.setUpdatesEnabled(False)
         self.table.setRowCount(0)
         self.node.setText(result.current or "状态无法确认")
         active = next((x for x in result.measurements if x.name == result.current), None)
         self.delay.setText(f"{active.delay} ms" if active and active.delay is not None else "测速失败 / 未知")
-        self.delay.setStyleSheet("color: " + ("#087f69" if active and active.delay is not None and active.delay <= self.settings.threshold_ms else "#a76508"))
+        tone = "success" if active and active.delay is not None and active.delay <= self.settings.threshold_ms else "warning"
+        self.delay.setStyleSheet("color: " + ("#087f69" if tone == "success" else "#936010"))
         for item in result.measurements:
             remark = ("当前使用；" if item.name == result.current else "") + (f"已排除：{item.excluded}" if item.excluded else "候选节点")
             self._table_row(item.name, f"{item.delay} ms" if item.delay is not None else "无有效数据",
                             "正常" if item.delay is not None and item.delay <= self.settings.threshold_ms else ("延迟偏高" if item.delay else "测速失败"),
                             remark, item.error)
         self.table_caption.setText(f"节点测速结果 · {len(result.measurements)} 个节点 · {result.group}")
+        self.result_summary.setText("真实测速结果 · 最近一次检测完成")
         self.last_checked.setText("最近检测：" + datetime.now().strftime("%H:%M:%S"))
-        self.notice.setText(result.message)
+        self.notice.setText(result.message, "success" if result.switched or tone == "success" else "warning")
+        self.results_stack.setCurrentIndex(0)
+        self._filter_nodes(self.node_search.text())
+        if selected_name:
+            for row in range(self.table.rowCount()):
+                if self.table.item(row, 0) and self.table.item(row, 0).text() == selected_name:
+                    self.table.selectRow(row)
+                    break
+        self.table.verticalScrollBar().setValue(min(scroll_value, self.table.verticalScrollBar().maximum()))
+        self.table.setUpdatesEnabled(True)
         if result.traffic:
             self._traffic(result.traffic)
         if result.switched:
@@ -542,7 +371,7 @@ class MainWindow(QMainWindow):
     def _table_row(self, name, delay, status, remark, error=""):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setRowHeight(row, 37)
+        self.table.setRowHeight(row, 44)
         for col, text in enumerate((name, delay, status, remark)):
             item = QTableWidgetItem(text)
             item.setToolTip(error if col == 2 and error else text)
@@ -554,12 +383,13 @@ class MainWindow(QMainWindow):
                 item.setFont(font)
                 item.setBackground(QColor("#edf8f3"))
             if col == 2:
-                item.setForeground(QColor("#087f69" if status == "正常" else "#a76508" if status == "延迟偏高" else "#616977"))
+                item.setForeground(QColor(COLORS["accent"] if status == "正常" else "#a76508" if status == "延迟偏高" else COLORS["muted"]))
             self.table.setItem(row, col, item)
 
     def _error(self, message):
-        self.notice.setText(message)
+        self.notice.setText(message, "error")
         self.header_status.setText("需要处理")
+        set_tone(self.header_status, "error")
         self.statusBar().showMessage(message)
         if "系统代理" in message or "TUN" in message:
             dialog = QMessageBox(QMessageBox.Warning, "请先启用代理模式", message, parent=self)
@@ -571,6 +401,7 @@ class MainWindow(QMainWindow):
 
     def _status(self, text):
         self.header_status.setText(text)
+        set_tone(self.header_status, "success" if "运行" in text or "连接" in text else "warning" if "暂停" in text else "")
         self.auto_state.setText("运行中" if self.controller.active else ("已暂停" if "暂停" in text else "已关闭"))
         self.tray.setToolTip("Clash 智能节点管家 · " + text)
         self.statusBar().showMessage(text)
@@ -585,13 +416,30 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled((active or busy) and not self.exiting)
         self.group.setEnabled(not busy and not self.exiting)
         self.settings_widget.setEnabled(not busy and not active and not self.exiting)
+        self.save_button.setEnabled(not busy and not active and not self.exiting)
+        self.task_progress.setVisible(busy)
+        self.task_progress.setRange(0, 0 if busy else 1)
+        if busy:
+            self.operation_hint.setText("后台任务进行中；界面仍可浏览")
+            self.header_status.setText("处理中")
+            set_tone(self.header_status, "warning")
+        elif self._task_status:
+            self.operation_hint.setText("立即测速只检测，不切换节点")
+        self._task_status = "处理中" if busy else "就绪"
 
     def append_log(self, message):
         for secret in self.redactor.secrets:
             if secret:
                 message = message.replace(secret, "[密钥已隐藏]")
         self.logger.info(message)
+        was_following = self.follow_logs.isChecked()
         self.logs.appendPlainText(datetime.now().strftime("%H:%M:%S") + "  " + message)
+        if was_following:
+            self.logs.verticalScrollBar().setValue(self.logs.verticalScrollBar().maximum())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange_actions()
 
     def open_logs(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.directory / "logs")))
@@ -620,7 +468,7 @@ class MainWindow(QMainWindow):
         self.controller.shutdown()
         self._persist_runtime()
         self._busy(self.controller.busy)
-        self.notice.setText("正在结束后台请求，请稍候…")
+        self.notice.setText("正在结束后台请求，请稍候…", "warning")
         if not self.controller.busy:
             self._finish_exit()
 

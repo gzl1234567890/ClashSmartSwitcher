@@ -1,0 +1,446 @@
+"""Qt layout construction, kept separate from controller and persistence actions."""
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import (
+    QCheckBox, QComboBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QProgressBar, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QTableWidget,
+    QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
+)
+
+from .config import MAX_CONCURRENCY
+from .region_select import RegionMultiSelect
+from .theme import COLORS, SPACE, interface_font
+from .ui_components import ElidedLabel, NoticePanel, icon, resource_path
+
+
+class NoWheelSpinBox(QSpinBox):
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class WindowLayout:
+    def button(self, text, symbol, callback, primary=False, quiet=False):
+        button = QPushButton(text)
+        button.setIcon(icon(symbol, "#ffffff" if primary else COLORS["muted"]))
+        button.setIconSize(QSize(17, 17))
+        button.setCursor(Qt.PointingHandCursor)
+        button.setToolTip(text)
+        button.setAccessibleName(text)
+        if primary or quiet:
+            button.setObjectName("primary" if primary else "quiet")
+        button.clicked.connect(callback)
+        return button
+
+    @staticmethod
+    def label(text, name="muted", wrap=False):
+        label = QLabel(text)
+        label.setObjectName(name)
+        label.setTextFormat(Qt.PlainText)
+        label.setWordWrap(wrap)
+        return label
+
+    def _build(self):
+        root = QWidget()
+        root.setObjectName("root")
+        self.setCentralWidget(root)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("header")
+        bar = QHBoxLayout(header)
+        bar.setContentsMargins(SPACE["page"], 18, SPACE["page"], 12)
+        mark = QLabel()
+        mark.setPixmap(icon("network", COLORS["accent"]).pixmap(30, 30))
+        bar.addWidget(mark)
+        titles = QVBoxLayout()
+        titles.setSpacing(3)
+        titles.addWidget(self.label("Clash 智能节点管家", "title"))
+        titles.addWidget(self.label("本机节点监测与自动切换 · 独立第三方工具"))
+        bar.addLayout(titles)
+        bar.addStretch()
+        self.header_status = self.label("接口未连接", "badge")
+        bar.addWidget(self.header_status, 0, Qt.AlignTop)
+        layout.addWidget(header)
+
+        summary = QWidget()
+        summary.setObjectName("summary")
+        grid = QGridLayout(summary)
+        grid.setContentsMargins(SPACE["page"], 10, SPACE["page"], 18)
+        grid.setHorizontalSpacing(28)
+        grid.setVerticalSpacing(6)
+        self.node = ElidedLabel("等待连接")
+        self.node.setObjectName("node")
+        self.delay = self.label("未测速", "delay")
+        self.auto_state = self.label("已关闭", "autoState")
+        self.group_context = ElidedLabel("选择一个代理组，开始管理节点")
+        self.group_context.setObjectName("muted")
+        self.measure_context = self.label("先测速，再了解节点状态")
+        self.auto_context = self.label("只管理选定的代理组")
+        for col, (title, value, hint) in enumerate((
+            ("当前节点", self.node, self.group_context),
+            ("最近测速延迟", self.delay, self.measure_context),
+            ("自动切换", self.auto_state, self.auto_context),
+        )):
+            grid.addWidget(self.label(title), 0, col)
+            grid.addWidget(value, 1, col)
+            grid.addWidget(hint, 2, col)
+        grid.setColumnStretch(0, 5)
+        grid.setColumnStretch(1, 3)
+        grid.setColumnStretch(2, 3)
+        layout.addWidget(summary)
+
+        content = QWidget()
+        body = QVBoxLayout(content)
+        body.setContentsMargins(24, 10, 24, 8)
+        body.setSpacing(10)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(False)
+        self.tabs.setIconSize(QSize(17, 17))
+        self._control_page()
+        self._settings_page()
+        self.help = QTextBrowser()
+        self.help.setOpenExternalLinks(True)
+        self.help.setFont(interface_font())
+        help_path = resource_path("docs/HELP.md")
+        self.help.setMarkdown(help_path.read_text(encoding="utf-8") if help_path.exists() else "请查看分发包内的中文 README.md。")
+        self.help.document().setDefaultStyleSheet("""
+            body { font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI'; font-size: 15px; color: #172d28; }
+            h1 { font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI'; font-size: 24px; font-weight: 600; color: #123d32; margin: 0 0 12px 0; }
+            h2 { font-size: 18px; font-weight: 600; color: #1b5142; margin: 20px 0 7px 0; }
+            h3 { font-size: 16px; font-weight: 600; color: #1b5142; margin: 16px 0 5px 0; }
+            p, li { font-size: 15px; line-height: 1.55; }
+            p { margin: 6px 0; }
+            li { margin: 3px 0; }
+            code, pre { font-family: 'Cascadia Mono', 'Consolas', monospace; color: #1b5142; }
+            a { color: #087f69; }
+        """)
+        self.tabs.addTab(self.help, icon("circle-help"), "帮助与排查")
+        body.addWidget(self.tabs, 1)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(6)
+        self.connect_button = self.button("重新检测连接", "refresh-cw", self.connect_api, quiet=True)
+        self.discover_button = self.button("自动发现", "radar", self.discover_api, quiet=True)
+        footer.addWidget(self.connect_button)
+        footer.addWidget(self.discover_button)
+        footer.addStretch()
+        self.version_label = ElidedLabel("本机控制接口 · 等待检测")
+        self.version_label.setObjectName("muted")
+        self.version_label.setMaximumWidth(270)
+        footer.addWidget(self.version_label, 1)
+        footer.addWidget(self.button("退出应用", "power", self.request_exit, quiet=True))
+        body.addLayout(footer)
+        layout.addWidget(content, 1)
+        self.statusBar().showMessage("就绪")
+        self.tabs.currentChanged.connect(self._page_changed)
+        self._arrange_actions()
+
+    def _control_page(self):
+        panel = QWidget()
+        page = QVBoxLayout(panel)
+        page.setContentsMargins(18, 18, 18, 16)
+        page.setSpacing(12)
+        self.action_grid = QGridLayout()
+        self.action_grid.setContentsMargins(0, 0, 0, 0)
+        self.action_grid.setSpacing(10)
+        self.group_row = QWidget()
+        group_row = QHBoxLayout(self.group_row)
+        group_row.setContentsMargins(0, 0, 0, 0)
+        group_row.setSpacing(10)
+        group_row.addWidget(self.label("代理组", "section"))
+        self.group = QComboBox()
+        self.group.setAccessibleName("需要管理的代理组")
+        self.group.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.group.setMinimumContentsLength(8)
+        self.group.setMinimumWidth(160)
+        self.group.addItem("请选择代理组", "")
+        self.group.currentIndexChanged.connect(self._group_changed)
+        group_row.addWidget(self.group, 1)
+        self.action_buttons = QWidget()
+        actions = QHBoxLayout(self.action_buttons)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        self.measure_button = self.button("立即测速", "gauge", self.measure)
+        self.measure_button.setToolTip("检测选定代理组的节点延迟，不切换节点")
+        self.start_button = self.button("开启自动切换", "play", self.start_auto, primary=True)
+        self.pause_button = self.button("暂停", "pause", self.pause_auto)
+        self.pause_button.setToolTip("停止后续自动操作；已提交的请求不能撤回")
+        self.stop_button = self.button("关闭自动切换", "square", self.stop_auto)
+        for button in (self.measure_button, self.start_button, self.pause_button, self.stop_button):
+            actions.addWidget(button)
+        page.addLayout(self.action_grid)
+        self.notice = NoticePanel("尚未连接本机控制接口。请先打开 Clash Verge，再点击下方“自动发现”。")
+        page.addWidget(self.notice)
+
+        connection_row = QHBoxLayout()
+        self.traffic_label = self.label("系统代理：状态无法确认    TUN：状态无法确认", wrap=True)
+        self.traffic_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        connection_row.addWidget(self.traffic_label, 1)
+        self.operation_hint = self.label("立即测速只检测，不切换节点")
+        connection_row.addWidget(self.operation_hint)
+        page.addLayout(connection_row)
+        self.task_progress = QProgressBar()
+        self.task_progress.setObjectName("taskProgress")
+        self.task_progress.setTextVisible(False)
+        self.task_progress.setRange(0, 1)
+        self.task_progress.setValue(0)
+        self.task_progress.setAccessibleName("后台任务忙碌指示，不提供百分比")
+        page.addWidget(self.task_progress)
+
+        self.results_splitter = QSplitter(Qt.Vertical)
+        self.results_splitter.setChildrenCollapsible(False)
+        result_area = QWidget()
+        results = QVBoxLayout(result_area)
+        results.setContentsMargins(0, 0, 0, 0)
+        results.setSpacing(9)
+        result_top = QHBoxLayout()
+        captions = QVBoxLayout()
+        captions.setSpacing(3)
+        self.table_caption = self.label("节点测速结果", "section")
+        self.result_summary = self.label("连接并选择代理组后，这里会显示真实节点")
+        captions.addWidget(self.table_caption)
+        captions.addWidget(self.result_summary)
+        result_top.addLayout(captions, 1)
+        self.node_search = QLineEdit()
+        self.node_search.setPlaceholderText("搜索节点")
+        self.node_search.setAccessibleName("筛选展示的节点，不改变测速范围")
+        self.node_search.setToolTip("仅筛选表格展示，不改变测速或自动切换范围")
+        self.node_search.addAction(icon("search"), QLineEdit.LeadingPosition)
+        self.node_search.setClearButtonEnabled(True)
+        self.node_search.setMaximumWidth(220)
+        self.node_search.setMinimumWidth(130)
+        self.node_search.textChanged.connect(self._filter_nodes)
+        result_top.addWidget(self.node_search)
+        results.addLayout(result_top)
+        self.results_stack = QStackedWidget()
+        self.table = QTableWidget(0, 4)
+        self.table.setAccessibleName("节点测速结果")
+        self.table.setHorizontalHeaderLabels(["节点名称", "延迟", "测速状态", "角色与说明"])
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        self.table.setTextElideMode(Qt.ElideRight)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.table.horizontalHeader().setMinimumSectionSize(85)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setColumnWidth(1, 105)
+        self.table.setColumnWidth(2, 120)
+        self.table.setMinimumHeight(110)
+        self.results_stack.addWidget(self.table)
+        empty = QWidget()
+        empty_layout = QVBoxLayout(empty)
+        empty_layout.setSpacing(9)
+        empty_layout.addStretch()
+        empty_symbol = QLabel()
+        empty_symbol.setPixmap(icon("gauge", "#83a393").pixmap(36, 36))
+        empty_layout.addWidget(empty_symbol, 0, Qt.AlignHCenter)
+        self.empty_title = self.label("连接后，开始第一次测速", "section")
+        self.empty_detail = self.label("自动发现本机接口，或前往设置填写控制地址。", wrap=True)
+        self.empty_detail.setAlignment(Qt.AlignCenter)
+        self.empty_detail.setMinimumWidth(380)
+        self.empty_detail.setMaximumWidth(520)
+        self.empty_detail.setMinimumHeight(38)
+        empty_layout.addWidget(self.empty_title, 0, Qt.AlignHCenter)
+        empty_layout.addWidget(self.empty_detail, 0, Qt.AlignHCenter)
+        empty_actions = QHBoxLayout()
+        empty_actions.addStretch()
+        self.empty_discover = self.button("自动发现", "radar", self.discover_api)
+        self.empty_settings = self.button("连接设置", "settings-2", lambda: self.tabs.setCurrentIndex(1), quiet=True)
+        empty_actions.addWidget(self.empty_discover)
+        empty_actions.addWidget(self.empty_settings)
+        empty_actions.addStretch()
+        empty_layout.addLayout(empty_actions)
+        empty_layout.addStretch()
+        self.results_stack.addWidget(empty)
+        self.results_stack.setCurrentIndex(1)
+        results.addWidget(self.results_stack, 1)
+        self.results_splitter.addWidget(result_area)
+
+        log_area = QWidget()
+        logs = QVBoxLayout(log_area)
+        logs.setContentsMargins(0, 6, 0, 0)
+        logs.setSpacing(7)
+        line = QHBoxLayout()
+        line.setSpacing(8)
+        self.log_toggle = self.button("运行日志", "chevron-down", self._toggle_logs, quiet=True)
+        line.addWidget(self.log_toggle)
+        self.last_checked = self.label("最近检测：尚未检测")
+        line.addWidget(self.last_checked)
+        line.addStretch()
+        self.follow_logs = QCheckBox("跟随最新")
+        self.follow_logs.setChecked(True)
+        self.follow_logs.setToolTip("向上滚动阅读历史时自动停止跟随；勾选后回到最新日志")
+        self.follow_logs.toggled.connect(self._follow_log_changed)
+        line.addWidget(self.follow_logs)
+        line.addWidget(self.button("日志目录", "folder-open", self.open_logs, quiet=True))
+        line.addWidget(self.button("清空显示", "trash-2", self._clear_logs, quiet=True))
+        logs.addLayout(line)
+        self.logs = QPlainTextEdit()
+        self.logs.setReadOnly(True)
+        self.logs.setAccessibleName("运行日志")
+        self.logs.setMaximumBlockCount(2000)
+        self.logs.setMinimumHeight(65)
+        self.logs.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.logs.verticalScrollBar().valueChanged.connect(self._log_scrolled)
+        logs.addWidget(self.logs)
+        self.results_splitter.addWidget(log_area)
+        self.results_splitter.setStretchFactor(0, 5)
+        self.results_splitter.setStretchFactor(1, 2)
+        self.results_splitter.setSizes([360, 145])
+        page.addWidget(self.results_splitter, 1)
+        self.tabs.addTab(panel, icon("activity"), "控制面板")
+
+    def _settings_page(self):
+        page_widget = QWidget()
+        page = QVBoxLayout(page_widget)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(0)
+        self.settings_lock_hint = self.label("修改后请保存。启动连接或测速时，会使用表单中的当前参数。", wrap=True)
+        self.settings_lock_hint.setContentsMargins(22, 14, 22, 6)
+        page.addWidget(self.settings_lock_hint)
+        scroll = QScrollArea()
+        self.settings_scroll = scroll
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        wrap = QWidget()
+        wrap.setObjectName("settingsWrap")
+        wrap_layout = QHBoxLayout(wrap)
+        wrap_layout.setContentsMargins(22, 10, 22, 16)
+        widget = QWidget()
+        widget.setObjectName("settingsContent")
+        widget.setMaximumWidth(960)
+        self.settings_widget = widget
+        sections = QVBoxLayout(widget)
+        sections.setContentsMargins(0, 0, 0, 0)
+        sections.setSpacing(20)
+        wrap_layout.addWidget(widget, 1)
+        wrap_layout.addStretch(0)
+
+        def section(title, hint):
+            frame = QFrame()
+            frame.setObjectName("settingsSection")
+            box = QVBoxLayout(frame)
+            box.setContentsMargins(0, 0, 0, 16)
+            box.setSpacing(8)
+            box.addWidget(self.label(title, "section"))
+            box.addWidget(self.label(hint, wrap=True))
+            form = QFormLayout()
+            form.setContentsMargins(0, 3, 0, 0)
+            form.setHorizontalSpacing(24)
+            form.setVerticalSpacing(12)
+            form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+            box.addLayout(form)
+            sections.addWidget(frame)
+            return form
+
+        connection = section("连接设置", "填写本机控制接口，不是代理流量端口。也可以使用窗口下方的自动发现。")
+        self.address = QLineEdit()
+        self.address.setPlaceholderText("http://127.0.0.1:控制端口，或官方命名管道")
+        self.address.setAccessibleName("控制接口地址")
+        self.address.setToolTip("仅支持本机 HTTP/HTTPS 控制地址或 Mihomo 官方命名管道")
+        self.secret = QLineEdit()
+        self.secret.setEchoMode(QLineEdit.Password)
+        self.secret.setPlaceholderText("控制接口需要认证时填写")
+        self.secret.setAccessibleName("控制密钥")
+        connection.addRow("控制接口地址", self.address)
+        connection.addRow("控制密钥", self.secret)
+
+        rules = section("检测与切换规则", "当前节点超出阈值或测速失败时，才考虑切换到组内合格节点。")
+        self.threshold = self.spin(1, 60000, " ms")
+        self.interval = self.spin(5, 86400, " 秒")
+        self.timeout = self.spin(500, 30000, " ms")
+        self.minimum_switch = self.spin(0, 86400, " 秒")
+        for title, control, low, high in (
+            ("延迟阈值", self.threshold, 1, 60000),
+            ("检测间隔", self.interval, 5, 86400),
+            ("单节点测速超时", self.timeout, 500, 30000),
+            ("最小切换间隔", self.minimum_switch, 0, 86400),
+        ):
+            control.setAccessibleName(title)
+            rules.addRow(title, self.numeric_row(control, low, high))
+
+        candidates = section("候选与性能", "排除地区只影响自动切换候选；自动测速会限制并发，避免节点互相争抢连接。")
+        self.concurrency = self.spin(1, MAX_CONCURRENCY, " 个")
+        self.concurrency.setAccessibleName("并发测速数量")
+        self.concurrency.valueChanged.connect(self._concurrency_edited)
+        row = self.numeric_row(self.concurrency, 1, MAX_CONCURRENCY)
+        self.concurrency_hint = row.findChild(QLabel, "settingHint")
+        candidates.addRow("并发测速数量", row)
+        self.test_url = QLineEdit()
+        self.test_url.setAccessibleName("测速地址")
+        candidates.addRow("测速地址", self.test_url)
+        self.region_selector = RegionMultiSelect()
+        candidates.addRow("排除地区", self.region_selector)
+
+        app = section("应用与安全", "密钥按当前 Windows 账户加密保存；不勾选时仅本次使用。")
+        self.close_to_tray = QCheckBox("关闭窗口时最小化到托盘")
+        self.save_secret = QCheckBox("使用 Windows 账户加密保存密钥")
+        app.addRow("窗口行为", self.close_to_tray)
+        app.addRow("密钥保存", self.save_secret)
+        sections.addStretch()
+        scroll.setWidget(wrap)
+        page.addWidget(scroll, 1)
+        save_bar = QWidget()
+        save_bar.setObjectName("saveBar")
+        save = QHBoxLayout(save_bar)
+        save.setContentsMargins(22, 10, 22, 10)
+        self.settings_feedback = self.label("设置已载入", wrap=True)
+        save.addWidget(self.settings_feedback, 1)
+        self.save_button = self.button("保存设置", "save", self.save_settings, primary=True)
+        save.addWidget(self.save_button)
+        page.addWidget(save_bar)
+        self.tabs.addTab(page_widget, icon("settings-2"), "连接与设置")
+        for field in (self.address, self.secret, self.test_url):
+            field.textChanged.connect(self._settings_edited)
+        for field in (self.threshold, self.interval, self.timeout, self.minimum_switch, self.concurrency):
+            field.valueChanged.connect(self._settings_edited)
+        for field in (self.close_to_tray, self.save_secret):
+            field.toggled.connect(self._settings_edited)
+        self.region_selector.selection_changed.connect(self._settings_edited)
+
+    @staticmethod
+    def spin(low, high, suffix):
+        control = NoWheelSpinBox()
+        control.setRange(low, high)
+        control.setSuffix(suffix)
+        control.setToolTip(f"可直接输入，或使用右侧箭头调整。允许范围：{low}–{high}")
+        return control
+
+    @staticmethod
+    def numeric_row(control, low, high):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        control.setMaximumWidth(220)
+        layout.addWidget(control, 1)
+        hint = QLabel(f"范围：{low}–{high}")
+        hint.setObjectName("settingHint")
+        hint.setWordWrap(True)
+        hint.setMinimumWidth(120)
+        layout.addWidget(hint, 2)
+        return row
+
+    def _arrange_actions(self):
+        compact = self.width() < 1080
+        if getattr(self, "_compact_actions", None) == compact:
+            return
+        self._compact_actions = compact
+        self.action_grid.removeWidget(self.group_row)
+        self.action_grid.removeWidget(self.action_buttons)
+        self.action_grid.addWidget(self.group_row, 0, 0, 1, 2 if compact else 1)
+        self.action_grid.addWidget(self.action_buttons, 1 if compact else 0, 0 if compact else 1,
+                                   1, 2 if compact else 1)
+        self.action_grid.setColumnStretch(0, 1)
+        self.action_grid.setColumnStretch(1, 0)

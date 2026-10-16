@@ -60,6 +60,23 @@ def test_all_failed_keeps_and_warns():
     assert "均不可用" in result.message and not client.writes
 
 
+def test_short_timeout_retries_mihomo_probe_with_normal_budget():
+    class SlowStartClient(FakeClient):
+        def __init__(self):
+            super().__init__({"美国": 185, "德国": 80})
+            self.timeouts = []
+
+        def delay(self, name, url, timeout_ms):
+            self.timeouts.append(timeout_ms)
+            if timeout_ms < 5000:
+                raise ApiError("测速超时", 504)
+            return super().delay(name, url, timeout_ms)
+
+    client = SlowStartClient()
+    result = run(client, timeout_ms=500)
+    assert result.switched and client.timeouts.count(5000) == 2
+
+
 def test_current_failed_chooses_available():
     assert run(FakeClient({"美国": None, "德国": 80})).current == "德国"
 

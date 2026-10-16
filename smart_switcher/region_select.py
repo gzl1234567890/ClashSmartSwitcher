@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from .regions import ALIASES
+from .theme import REGION_STYLE
 
 
 
@@ -115,27 +116,7 @@ class RegionMultiSelect(QFrame):
         self.setAccessibleName("排除地区")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setMinimumHeight(44)
-        self.setStyleSheet("""
-            QFrame#regionSelect { background: white; border: 1px solid #c6ccd5; border-radius: 4px; }
-            QFrame#regionSelect:hover { border-color: #087f69; }
-            QFrame#regionSelect[focused="true"] { border: 2px solid #087f69; }
-            QFrame#regionSelect:disabled { background: #f0f1f4; border-color: #e0e3e8; }
-            QLineEdit#regionSearch, QLineEdit#regionSearch:focus {
-                border: none; background: transparent; padding: 2px; min-height: 28px;
-            }
-            QWidget#regionChip { background: #e2f2ed; border: 1px solid #a9d7c9; border-radius: 5px; }
-            QWidget#regionChip QLabel { color: #285248; background: transparent; }
-            QWidget#regionChip:disabled { background: #edf0f4; border-color: #dce0e7; }
-            QToolButton { border: none; border-radius: 3px; background: transparent; padding: 2px; }
-            QToolButton:hover { background: #e2f2ed; }
-            QToolButton:focus { border: 1px solid #087f69; }
-            QToolButton:disabled { color: #808692; }
-            QFrame#regionMenu { background: white; border: 1px solid #c6ccd5; border-radius: 5px; }
-            QListWidget { border: none; background: white; outline: none; }
-            QListWidget::item { min-height: 32px; padding: 0 8px; border-radius: 3px; }
-            QListWidget::item:hover, QListWidget::item:selected { background: #e2f2ed; color: #285248; }
-            QLabel#regionEmpty { color: #616977; padding: 12px 8px; }
-        """)
+        self.setStyleSheet(REGION_STYLE)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 6, 6)
         layout.setSpacing(6)

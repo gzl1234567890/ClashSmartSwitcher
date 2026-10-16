@@ -6,7 +6,7 @@ import threading
 import time
 
 from .api import ApiError
-from .config import Settings
+from .config import RETRY_TIMEOUT_MS, Settings
 from .regions import excluded_region
 from .status import detect_traffic
 
@@ -107,7 +107,18 @@ class SwitchEngine:
             try:
                 item.delay = client.delay(name, settings.test_url, settings.timeout_ms)
             except ApiError as exc:
-                item.error = str(exc)
+                # A short user-selected timeout is useful for quick scans, but
+                # it should not turn a slow first connection into a false
+                # failure when the same node works in Clash Verge. Mihomo
+                # reports this case as HTTP 504; retry once at the normal
+                # 5-second probe budget before marking the node unavailable.
+                if exc.status == 504 and settings.timeout_ms < RETRY_TIMEOUT_MS:
+                    try:
+                        item.delay = client.delay(name, settings.test_url, RETRY_TIMEOUT_MS)
+                    except ApiError as retry_error:
+                        item.error = str(retry_error)
+                else:
+                    item.error = str(exc)
             return item
 
         # Only keep at most concurrency pending requests; cancellation stops new submissions.
