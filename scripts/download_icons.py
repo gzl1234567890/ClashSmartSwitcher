@@ -9,9 +9,9 @@ DESTINATION = ROOT / "resources" / "icons" / "lucide"
 VERSION = "0.468.0"
 ICONS = (
     "activity", "play", "pause", "square", "refresh-cw", "search", "folder-open",
-    "trash-2", "x", "chevron-down", "chevron-up", "check", "circle-alert",
-    "circle-check", "plug", "unplug", "radar", "gauge", "settings-2",
-    "circle-help", "power", "save", "arrow-up-right", "network", "eye", "eye-off",
+    "trash-2", "chevron-down", "chevron-up", "circle-alert",
+    "circle-check", "plug", "radar", "gauge", "settings-2",
+    "circle-help", "power", "save", "arrow-up-right", "network",
 )
 
 

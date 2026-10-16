@@ -1,0 +1,15 @@
+# Validated Windows x64 / Python 3.12 build environment, including transitive tools.
+-r requirements-dev.txt
+altgraph==0.17.5
+colorama==0.4.6
+iniconfig==2.3.1
+packaging==26.3
+pefile==2024.8.26
+pluggy==1.6.0
+Pygments==2.21.0
+pyinstaller-hooks-contrib==2026.8
+pywin32-ctypes==0.2.3
+setuptools==84.0.0
+shiboken6==6.10.3
+typing_extensions==4.16.0
+wheel==0.47.0

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 
 from .regions import ALIASES
 from .theme import REGION_STYLE
+from .motion import MotionToolButton
 
 
 
@@ -84,7 +85,7 @@ class RegionChip(QWidget):
         layout.setSpacing(3)
         label = QLabel(self.fontMetrics().elidedText(region, Qt.ElideRight, 170))
         label.setMinimumWidth(0)
-        self.remove_button = QToolButton()
+        self.remove_button = MotionToolButton()
         self.remove_button.setObjectName("regionRemove")
         self.remove_button.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
         self.remove_button.setFixedSize(24, 24)
@@ -130,14 +131,14 @@ class RegionMultiSelect(QFrame):
         self.editor.setToolTip("搜索地区；也可输入自定义地区后选择添加")
         self.flow.addWidget(self.editor)
         layout.addWidget(self.content, 1)
-        self.clear_button = QToolButton()
+        self.clear_button = MotionToolButton()
         self.clear_button.setIcon(self.style().standardIcon(QStyle.SP_DialogResetButton))
         self.clear_button.setToolTip("清空排除地区")
         self.clear_button.setAccessibleName("清空排除地区")
         self.clear_button.setFixedSize(28, 30)
         self.clear_button.clicked.connect(self.clear)
         layout.addWidget(self.clear_button, 0, Qt.AlignTop)
-        self.toggle_button = QToolButton()
+        self.toggle_button = MotionToolButton()
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.setToolTip("展开或收起地区选项")
         self.toggle_button.setAccessibleName("展开或收起地区选项")
@@ -224,7 +225,7 @@ class RegionMultiSelect(QFrame):
         self.content.updateGeometry()
         self.updateGeometry()
         self._filter_options()
-        QTimer.singleShot(0, self._position_popup)
+        QTimer.singleShot(0, self, self._position_popup)
 
     def _filter_options(self):
         current = self.options.currentItem()

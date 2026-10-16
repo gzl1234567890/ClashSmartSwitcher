@@ -1,34 +1,61 @@
-# 验证报告
+# V3.0.0 验证报告
 
-## 真实 Clash Verge 环境
+日期：2026-10-16。环境：Windows 11 x64，10.0.26200，Python 3.12.15，
+PySide6 Essentials / shiboken6 6.10.3。
 
-- Clash Verge Rev：2.5.8
-- Mihomo：v1.19.32
-- 传输：Mihomo 官方 Windows 命名管道上的 HTTP API
-- 读取结果：64 个代理条目、12 个 Selector 代理组、版本信息和实时 TUN 状态
-- 当前状态：系统代理未启用，TUN 已启用
-- 真实测速：当前节点 98 ms
-- 写请求：0 次；探针没有执行节点切换
+## 字体验收（已完成）
 
-完整的脱敏探针结果保存在 `verification/live-probe.json`。
+- 定位到可变字重及生成静态字体保留空 STAT 表的问题：Qt 请求 600 时可能选到
+  Medium 500 再合成粗体，仅检查 QFont/QRawFont 声明字重不能发现这一问题。
+- 静态生成器删除空 STAT，并修正 Windows legacy family 与 Bold 位，真实 OS/2
+  字重为 400/500/600。保留源字体、版权和 OFL 许可证，运行包不加载可变源。
+- 全局 QFont/QSS 同用系统微软雅黑优先、静态 Clash Sans SC 回退的字体链；
+  默认字号统一为 15 逻辑像素。未放大字号、全局加粗或变更布局。
+- 38 项页面/字体/交互专项通过。实际字体表检查与像素覆盖量递进通过；中文、英文、
+  数字、箭头、勾号、省略号等混合文本没有缺字；状态重绘保持字重。
+- 原生 Qt 截图覆盖 100%/125%/150%（真实 DPR 1/1.25/1.5）、1440×900 和
+  850×630 的五个主要页面、焦点/忙碌/空状态。精选图在 `docs/images/`，
+  完整过程保留在本机 `verification/font-100`、`font-125`、`font-150`。
+- 原生 QApplication 主事件循环完成 100 次长中文/英文/符号节点更新、五页切换
+  和尺寸变化，零网络请求。记录：`verification/runtime/result.json`。
 
-## 发布包
+参考 Clash Verge Rev 的 Windows 字体选择方式：
+[上游主题](https://github.com/clash-verge-rev/clash-verge-rev/blob/main/src/pages/_theme.tsx)。
+本项目使用 Qt Widgets，不是 WebView；CSS 字体平滑开关不能直接移植。
+微软雅黑在部分环境没有独立 500/600 实体，Windows 可合成对应粗细；随包 fallback
+三字重已经验证真实数据匹配。不同显示器/ClearType 设置仍会影响观感。
 
-- PyInstaller 一目录包启动冒烟测试通过
-- `--smoke-test` 成功创建窗口、保存截图并正常退出
-- 发布 ZIP：`dist/ClashSmartSwitcher-2.0.0-windows-x64.zip`
-- Qt ICU 依赖已过滤，避免其他 Python/Conda 运行时中的 ICU DLL 覆盖 Windows 系统 ICU
+## 最终回归与构建
 
-## 自动化测试
+- 原生 Windows 后端：139 项通过，18.38 秒；`verification/v3-native.xml`。
+- offscreen 后端：139 项通过，12.98 秒；`verification/v3-offscreen.xml`。没有跳过命名管道测试。
+- 覆盖决策、HTTP/命名管道、配置/DPAPI、取消/退出、运行中设置、重连恢复、后台静默、
+  五页导航、搜索/选择/滚动、地区多选、键盘焦点、减少动画、隐藏恢复和字体实际匹配。
+- `pip check` 无依赖冲突，`compileall` 编译通过，`git diff --check` 无格式错误。
+- 三个静态字体重新生成后的 SHA256 均与生成前一致。
+- 最终 V3 截图重采集至 `verification/v3-ui-100`、`v3-ui-125`、`v3-ui-150`；
+  已复核主要页面，`docs/images/` 更新为带 v3.0.0 版本的精选截图。
+- 原生主循环压力检查再次完成 100 次更新、五页切换，零网络请求。
+- 正式 PyInstaller 6.19.0 一目录构建通过，EXE 的 PE File/Product 版本为 3.0.0。
+- 已用独立数据目录启动 EXE，创建实际界面、截图并正常退出；退出标记含 event-loop-exit。
+- 检查冻结资源中的 400/500/600 实际字重、无 fvar/STAT、源文件字节一致和两份字体
+  许可证；图标与内置 HELP 存在，运行包没有可变源字体。
+- 构建依赖锁定清单的离线 dry-run 全部满足，无待安装依赖；构建警告仅涉及条件或
+  可选平台导入，隔离启动未发生缺失 DLL/入口失败。
+- `scripts/package_release.py` 使用新的隔离配置冒烟，确认正常退出后生成
+  `dist/ClashSmartSwitcher-3.0.0-windows-x64.zip`（约 57.4 MB）和 `.zip.sha256`。
+  ZIP CRC 完整性校验通过；文档保持 README 所需的相对目录，附带 LICENSE/CHANGELOG。
+- 完整 ZIP 解压至新的本地目录后再次启动 EXE，隔离配置冒烟与退出通过；共 262 个文件，
+  不含个人配置、日志、测试、历史记录和可变字体源，README 文档/图片链接均可解析。
 
-此前完整测试记录为 81 项通过，记录见 `verification/test-results-final.xml`。当前受限执行环境会拒绝模拟 Windows 命名管道创建，并可能拒绝 pytest 临时目录访问；这两项限制不影响真实 Mihomo 命名管道探针或发布包冒烟测试。
+历史记录见 `history/verification-v2-and-development.md`，历史阶段通过数量不代替本次结果。
 
-V2.0.0 首次发布回归：89 项通过，1 项命名管道测试因执行环境拒绝访问而排除；该项曾实际运行并报 WinError 5，不能视为通过。测试进程使用默认权限创建临时目录以兼容受限环境。另在原生 Windows Qt 平台运行桌面和地区多选相关测试，16 项通过；检查了 1120 像素及 850 像素窗口宽度下的标签换行、浮层位置和横向滚动情况。地区候选更新与保存恢复使用模拟代理组验证，未执行真实代理切换。
+## 验证边界
 
-V2.0.0 滚轮修复重发回归（2026-10-15）：原生 Windows Qt 平台 98 项通过，仍排除上述 1 项权限受限的命名管道测试。地区组件专项测试 17 项在 Windows 和 offscreen 平台均通过。使用准确全局坐标的 `QWheelEvent`，分别从原生 `QWindow` 和列表 viewport 注入，验证长列表向上/向下、顶部/底部边界、搜索和选择不变、后续多选/取消/删除/清空、外部点击/Esc、设置页正常滚动以及反复开关/销毁后的事件监听器清理。额外验证了 Qt 样式对象的内部 FocusIn 不会关闭面板、原生窗口层输入框点击可切换展开状态。1120 和 850 像素窗口截图确认浮层位置稳定。以上为 Qt 事件注入验证，未进行人工物理滚轮验收；系统级鼠标注入未能可靠到达测试列表，因此不作为通过依据。
-
-## 尚未执行
-
-- 没有向用户实际代理组发送切换请求
-- 尚未在所有 Clash Verge 版本、Windows 10 实机或其他电脑上全面验证
-- 真实切换请按 `docs/MANUAL_TESTS.md` 执行
+- 本轮不向真实节点发送任何切换请求；连接、切换、失败、暂停场景使用模拟接口。
+- 曾在 pytest-qt 临时嵌套事件循环复现 pyside6.abi3.dll 原生访问异常。升级 6.10.3
+  本身不足以证明消除；固定等待改用 QTest.qWait，保留断言及真实条件等待，另做
+  QApplication.exec 运行验证。不能宣称所有电脑或长期运行都已经验证。
+- 未新增 Windows 10 实机、其他电脑、所有 Clash Verge 版本或人工物理滚轮验收。
+- 真实只读接口探针是历史记录（`history/live-probe.json`），不冒充本轮测试。
+- 程序未进行商业代码签名，Windows 可能显示未知发布者。

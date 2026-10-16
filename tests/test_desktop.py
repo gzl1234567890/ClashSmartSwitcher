@@ -1,7 +1,7 @@
 from pathlib import Path
 import time
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QTimer
 import pytest
 
 from smart_switcher.config import ConfigStore, Settings
@@ -111,6 +111,9 @@ def test_ui_has_no_fake_nodes_and_accepts_real_results(qtbot, tmp_path):
     window.settings.close_to_tray = False
     # Close only this test window; avoid quitting the shared pytest QApplication.
     window.closeEvent = lambda event: event.accept()
+    window.close()
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     for handler in logger.handlers[:]:
         handler.close()
         logger.removeHandler(handler)
@@ -129,7 +132,8 @@ def test_settings_controls_follow_group_size_and_region_chips(qtbot, tmp_path):
     assert window.concurrency.maximum() == len(client.delays)
     assert window.concurrency.value() == len(client.delays)
     window.concurrency.setValue(2)
-    assert not window.settings.concurrency_auto
+    assert window.settings.concurrency_auto
+    assert not window._read_settings().concurrency_auto
     window.region_selector.set_selected_regions(["香港", "新加坡", "日本"])
     assert "日本" in window._read_settings().excluded_regions
     window.region_selector.remove_region("日本")
@@ -158,6 +162,9 @@ def test_settings_controls_follow_group_size_and_region_chips(qtbot, tmp_path):
     assert window.threshold.toolTip().endswith("1–60000")
     window.tray.hide()
     window.closeEvent = lambda event: event.accept()
+    window.close()
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     for handler in logger.handlers[:]:
         handler.close()
         logger.removeHandler(handler)

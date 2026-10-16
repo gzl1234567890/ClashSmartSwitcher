@@ -1,6 +1,13 @@
 .conda/
 __pycache__/
 .pytest_cache/
+.tmp-test/
+pytest-cache-files-*/
+.impeccable/
+.env
+.env.*
+!.env.example
+settings.json
 build/
 dist/
 *.pyc
@@ -8,5 +15,3 @@ dist/
 verification/private/
 verification/*
 !verification/.gitkeep
-!verification/live-probe.json
-!verification/test-results-final.xml

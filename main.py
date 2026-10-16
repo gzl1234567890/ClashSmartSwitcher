@@ -4,13 +4,14 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from smart_switcher.config import ConfigStore
+from smart_switcher import __version__
 from smart_switcher.instance import SingleInstance
 from smart_switcher.logging_service import setup_logging
 from smart_switcher.ui import MainWindow
+from smart_switcher.theme import interface_font, load_app_fonts
 
 
 def main():
@@ -35,10 +36,12 @@ def main():
     app = QApplication(sys.argv[:1])
     mark("qapplication")
     app.setApplicationName("ClashSmartSwitcher")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("ClashSmartSwitcher")
     app.setQuitOnLastWindowClosed(False)
-    app.setFont(QFont("Microsoft YaHei UI", 10))
     try:
+        load_app_fonts()
+        app.setFont(interface_font())
         store = ConfigStore(args.data_dir)
         instance = SingleInstance(store.directory)
         if not instance.acquire():
