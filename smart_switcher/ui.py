@@ -59,6 +59,7 @@ class MainWindow(QMainWindow, WindowLayout):
         QDir.addSearchPath("uiicons", str(resource_path("resources/icons/lucide")))
         self.setStyleSheet(stylesheet())
         self._build()
+        self._tray()
         apply_interface_typography(self, (
             self.delay, self.last_checked, self.table, self.overview_table,
             self.threshold, self.interval, self.timeout, self.minimum_switch,
@@ -66,8 +67,8 @@ class MainWindow(QMainWindow, WindowLayout):
             self.rule_timeout, self.rule_cooldown, self.logs, self.recent_logs,
             self.switch_history, self.result_summary, self.trend_caption,
         ))
-        self.motion = MotionController(self, self.sidebar)
-        self._tray()
+        self._size_controls()
+        self.motion = MotionController(self, self.navigation_bar)
         self.controller.connection.connect(self._connected)
         self.controller.result.connect(self._result)
         self.controller.message.connect(self.append_log)
@@ -141,6 +142,7 @@ class MainWindow(QMainWindow, WindowLayout):
         self.rule_timeout.setText(f"测速超时    {s.timeout_ms / 1000:g} 秒")
         self.rule_cooldown.setText(f"最小切换间隔    {s.minimum_switch_seconds} 秒")
         self.trend_caption.setText(f"最近 5 次 · 阈值 {s.threshold_ms} ms")
+        self.overview_rule_hint.setText(f"每 {s.interval_seconds} 秒检测 · 阈值 {s.threshold_ms} ms\n仅管理当前选择的代理组")
         self.latency_trend.set_history(self._latency_history, s.threshold_ms)
 
     def _form_snapshot(self):
@@ -411,7 +413,7 @@ class MainWindow(QMainWindow, WindowLayout):
         active = next((x for x in result.measurements if x.name == result.current), None)
         self.delay.setText(f"{active.delay} ms" if active and active.delay is not None else "未知")
         tone = "success" if active and active.delay is not None and active.delay <= self.settings.threshold_ms else "warning"
-        self.delay.setStyleSheet("color: " + ("#087f69" if tone == "success" else "#936010"))
+        self.delay.setStyleSheet("color: " + COLORS["success" if tone == "success" else "warning"])
         for row, item in enumerate(result.measurements):
             remark = ("当前使用；" if item.name == result.current else "") + (f"已排除：{item.excluded}" if item.excluded else "候选节点")
             self._table_row(item.name, f"{item.delay} ms" if item.delay is not None else "无有效数据",
@@ -497,11 +499,11 @@ class MainWindow(QMainWindow, WindowLayout):
             elif col == 2:
                 item.setTextAlignment(Qt.AlignCenter)
             if "当前使用" in remark:
-                item.setBackground(QColor("#edf8f3"))
+                item.setBackground(QColor(COLORS["accent_tint"]))
             else:
                 item.setData(Qt.BackgroundRole, None)
             if col == 2:
-                item.setForeground(QColor(COLORS["accent"] if status == "正常" else "#a76508" if status == "延迟偏高" else COLORS["muted"]))
+                item.setForeground(QColor(COLORS["success"] if status == "正常" else COLORS["warning"] if status == "延迟偏高" else COLORS["muted"]))
 
     def _error(self, message):
         self.notice.setText(message, "error")

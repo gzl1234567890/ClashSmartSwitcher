@@ -28,6 +28,12 @@ from smart_switcher.status import TrafficState
 from smart_switcher.ui import MainWindow
 from tests.fakes import FakeClient
 
+def capture(widget, filename):
+    image = widget.grab().toImage()
+    image.setText("Source", "Synthetic QA screenshot of Clash Smart Switcher; scripts/capture_ui.py; scale " + args.scale + "%.")
+    image.save(str(filename))
+
+
 app = QApplication([])
 store = ConfigStore(root / "verification" / ("capture-data-" + args.scale))
 logger, redactor = setup_logging(store.directory / "logs")
@@ -37,26 +43,26 @@ directory = args.output_dir or root / "verification" / ("ui-" + args.scale)
 directory.mkdir(parents=True, exist_ok=True)
 window.show()
 QTest.qWait(220)
-window.grab().save(str(directory / "empty.png"))
+capture(window, directory / "empty.png")
 client = FakeClient()
 window.controller.client = client
 window._connected({"proxies": client.proxies(), "groups": ["组"], "version": "mock-test",
                    "traffic": TrafficState(True, False)})
 window.navigate(1)
 QTest.qWait(220)
-window.grab().save(str(directory / "unmeasured.png"))
+capture(window, directory / "unmeasured.png")
 cell = window.table.visualItemRect(window.table.item(0, 1))
 position = cell.center()
 QTest.mouseMove(window.table.viewport(), position)
 QApplication.sendEvent(window.table.viewport(), QHelpEvent(
     QEvent.ToolTip, position, window.table.viewport().mapToGlobal(position)))
 QTest.qWait(80)
-window.grab().save(str(directory / "unmeasured-hover.png"))
+capture(window, directory / "unmeasured-hover.png")
 for widget in QApplication.topLevelWidgets():
     if widget.objectName() == "qtooltip_label" and widget.isVisible():
-        widget.grab().save(str(directory / "unmeasured-tooltip.png"))
+        capture(widget, directory / "unmeasured-tooltip.png")
 QToolTip.hideText()
-QTest.mouseMove(window.sidebar, QPoint(100, 5))
+QTest.mouseMove(window.navigation_bar, QPoint(100, 5))
 engine = SwitchEngine(lambda c: TrafficState(True, False))
 for delay in (125, 110, 87, 98, 103):
     client.delays["美国"] = delay
@@ -71,33 +77,51 @@ for message in ("控制接口已连接", "完成节点测速", "当前节点 103
     window.append_log(message)
 for size, dimensions in (("desktop", (1440, 900)), ("compact", (850, 630))):
     window.resize(*dimensions)
-    for index, name in enumerate(("overview", "measurement", "automation", "logs", "settings")):
+    for index, name in enumerate(("overview", "measurement", "automation", "logs", "settings", "help")):
         window.navigate(index)
         QTest.qWait(220)
-        window.grab().save(str(directory / f"{size}-{name}.png"))
+        capture(window, directory / f"{size}-{name}.png")
         assert window.size().width() == dimensions[0], (name, window.size())
         assert window.size().height() == dimensions[1], (name, window.size())
+    for topic in (1, 4):
+        window.help.select_topic(topic)
+        QTest.qWait(180)
+        capture(window, directory / f"{size}-help-{topic}.png")
+        if topic == 1:
+            window.help.browser.verticalScrollBar().setValue(window.help.browser.verticalScrollBar().maximum())
+            QTest.qWait(100)
+            capture(window, directory / f"{size}-help-connection-code.png")
+            window.help.browser.verticalScrollBar().setValue(0)
+    window.help.select_topic(0)
 window.resize(1440, 900)
 window.navigate(1)
 QTest.qWait(220)
 window.motion.enabled = True
 window.navigate(2)
 app.processEvents()
-window.grab().save(str(directory / "transition-start.png"))
+capture(window, directory / "transition-start.png")
 QTest.qWait(70)
-window.grab().save(str(directory / "transition-middle.png"))
+capture(window, directory / "transition-middle.png")
 QTest.qWait(170)
-window.grab().save(str(directory / "transition-settled.png"))
+capture(window, directory / "transition-settled.png")
 window.navigate(4)
 window.threshold.setFocus()
 QTest.qWait(220)
-window.grab().save(str(directory / "interaction-focus.png"))
+capture(window, directory / "interaction-focus.png")
 window.navigate(1)
 window._busy(True)
 QTest.qWait(100)
-window.grab().save(str(directory / "interaction-busy.png"))
+capture(window, directory / "interaction-busy.png")
 window._busy(False)
-print(f"Captured five pages and interactions, scale {args.scale}, DPR {window.devicePixelRatioF()}")
+window.resize(850, 630)
+window._busy(True)
+QTest.qWait(100)
+capture(window, directory / "compact-busy.png")
+window._busy(False)
+window._status("连接异常，当前控制接口无法访问，请检查 Clash Verge 的本机控制地址和密钥后重新检测")
+QTest.qWait(220)
+capture(window, directory / "compact-long-status.png")
+print(f"Captured six pages, help topics and interactions, scale {args.scale}, DPR {window.devicePixelRatioF()}")
 window.settings.close_to_tray = False
 window.exiting = True
 window.tray.hide()

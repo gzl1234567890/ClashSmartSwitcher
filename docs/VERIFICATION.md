@@ -51,7 +51,7 @@ PySide6 Essentials / shiboken6 6.10.3。
 - 完整 ZIP 解压至新的本地目录后再次启动 EXE，隔离配置冒烟与退出通过；共 262 个文件，
   不含个人配置、日志、测试、历史记录和可变字体源，README 文档/图片链接均可解析。
 
-历史记录见 `history/verification-v2-and-development.md`，历史阶段通过数量不代替本次结果。
+更早版本的开发过程文件已于 2026-10-28 按用户要求清理；历史阶段通过数量不代替本次结果。新版 UI 验证见 [UI_VERIFICATION.md](UI_VERIFICATION.md)。
 
 ## 验证边界
 
@@ -60,5 +60,5 @@ PySide6 Essentials / shiboken6 6.10.3。
   本身不足以证明消除；固定等待改用 QTest.qWait，保留断言及真实条件等待，另做
   QApplication.exec 运行验证。不能宣称所有电脑或长期运行都已经验证。
 - 未新增 Windows 10 实机、其他电脑、所有 Clash Verge 版本或人工物理滚轮验收。
-- 真实只读接口探针是历史记录（`history/live-probe.json`），不冒充本轮测试。
+- 旧真实只读接口探针已清理，其结果不作为本轮测试证据。
 - 程序未进行商业代码签名，Windows 可能显示未知发布者。

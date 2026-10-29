@@ -4,13 +4,14 @@ from PySide6.QtCore import QEvent, QPoint, QRect, QSignalBlocker, QSize, Qt, QTi
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLayout,
-    QLineEdit, QListWidget, QListWidgetItem, QSizePolicy, QStyle, QToolButton,
+    QLineEdit, QListWidget, QListWidgetItem, QSizePolicy, QToolButton,
     QVBoxLayout, QWidget,
 )
 
 from .regions import ALIASES
 from .theme import REGION_STYLE
 from .motion import MotionToolButton
+from .ui_components import icon
 
 
 
@@ -87,7 +88,8 @@ class RegionChip(QWidget):
         label.setMinimumWidth(0)
         self.remove_button = MotionToolButton()
         self.remove_button.setObjectName("regionRemove")
-        self.remove_button.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
+        self.remove_button.setIcon(icon("x"))
+        self.remove_button.setIconSize(QSize(14, 14))
         self.remove_button.setFixedSize(24, 24)
         self.remove_button.setToolTip(f"删除排除地区：{region}")
         self.remove_button.setAccessibleName(f"删除排除地区：{region}")
@@ -132,7 +134,8 @@ class RegionMultiSelect(QFrame):
         self.flow.addWidget(self.editor)
         layout.addWidget(self.content, 1)
         self.clear_button = MotionToolButton()
-        self.clear_button.setIcon(self.style().standardIcon(QStyle.SP_DialogResetButton))
+        self.clear_button.setIcon(icon("trash-2"))
+        self.clear_button.setIconSize(QSize(16, 16))
         self.clear_button.setToolTip("清空排除地区")
         self.clear_button.setAccessibleName("清空排除地区")
         self.clear_button.setFixedSize(28, 30)

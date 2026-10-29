@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QImageReader, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QImageReader, QLinearGradient, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QStyle, QStyleOption, QWidget
 
 from .theme import COLORS, SPACE
@@ -86,21 +86,47 @@ class ElidedLabel(QLabel):
 class StatusBadge(QLabel):
     surface_color = None
 
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(360)
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+
+    def setText(self, text):
+        super().setText(text)
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+
+    def minimumSizeHint(self):
+        return QSize(80, super().minimumSizeHint().height())
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        return QSize(min(360, hint.width()), hint.height())
+
     def set_surface_color(self, color):
         self.surface_color = QColor(color)
         self.update()
 
     def paintEvent(self, event):
-        if self.surface_color is None:
-            return super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(self.surface_color)
-        painter.drawRoundedRect(self.rect(), 6, 6)
+        if self.surface_color is None:
+            option = QStyleOption()
+            option.initFrom(self)
+            self.style().drawPrimitive(QStyle.PE_Widget, option, painter, self)
+        else:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self.surface_color)
+            painter.drawRoundedRect(self.rect(), 12, 12)
         painter.setPen(self.palette().color(QPalette.WindowText))
         painter.setFont(self.font())
-        painter.drawText(self.contentsRect(), self.alignment(), self.text())
+        rect = self.contentsRect()
+        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, max(0, rect.width()))
+        alignment = self.alignment() if text == self.text() else Qt.AlignLeft | Qt.AlignVCenter
+        painter.drawText(rect, alignment, text)
 
 
 class NoticePanel(QFrame):
@@ -117,7 +143,7 @@ class NoticePanel(QFrame):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
         painter.setBrush(self.surface_color)
-        painter.drawRoundedRect(self.rect(), 8, 8)
+        painter.drawRoundedRect(self.rect(), 12, 12)
 
     def __init__(self, text, parent=None):
         super().__init__(parent)
@@ -178,7 +204,7 @@ class LatencyTrendWidget(QWidget):
             return
 
         top = max(max(value for _, value in valid), self._threshold, 50) * 1.18
-        grid_pen = QPen(QColor("#e4eee8"))
+        grid_pen = QPen(QColor("#dfe7f4"))
         grid_pen.setStyle(Qt.DashLine)
         painter.setPen(grid_pen)
         for fraction in (0.0, 0.5, 1.0):
@@ -189,7 +215,7 @@ class LatencyTrendWidget(QWidget):
             painter.setPen(grid_pen)
             painter.drawLine(rect.left(), int(y), rect.right(), int(y))
         threshold_y = rect.bottom() - (self._threshold / top) * rect.height()
-        threshold_pen = QPen(QColor("#84b9a2"))
+        threshold_pen = QPen(QColor("#9cb8e6"))
         threshold_pen.setStyle(Qt.DashLine)
         painter.setPen(threshold_pen)
         painter.drawLine(rect.left(), int(threshold_y), rect.right(), int(threshold_y))
@@ -199,6 +225,17 @@ class LatencyTrendWidget(QWidget):
             x = rect.left() if len(valid) == 1 else rect.left() + index * rect.width() / (len(valid) - 1)
             y = rect.bottom() - (value / top) * rect.height()
             points.append(QPointF(x, y))
+        if len(points) > 1:
+            area = QPainterPath(points[0])
+            for point in points[1:]:
+                area.lineTo(point)
+            area.lineTo(points[-1].x(), rect.bottom())
+            area.lineTo(points[0].x(), rect.bottom())
+            area.closeSubpath()
+            fill = QLinearGradient(0, rect.top(), 0, rect.bottom())
+            fill.setColorAt(0, QColor(23, 98, 214, 35))
+            fill.setColorAt(1, QColor(23, 98, 214, 0))
+            painter.fillPath(area, fill)
         line_pen = QPen(QColor(COLORS["accent"]), 2)
         painter.setPen(line_pen)
         for first, second in zip(points, points[1:]):
@@ -207,6 +244,9 @@ class LatencyTrendWidget(QWidget):
         painter.setPen(Qt.NoPen)
         for point in points:
             painter.drawEllipse(point, 4, 4)
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(point, 1.7, 1.7)
+            painter.setBrush(QColor(COLORS["accent"]))
 
         painter.setPen(QColor(COLORS["muted"]))
         for index, (stamp, value) in enumerate(valid):

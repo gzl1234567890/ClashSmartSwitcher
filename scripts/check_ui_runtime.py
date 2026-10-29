@@ -39,13 +39,13 @@ def main():
         count += 1
         name = "德国 Tokyo Singapore → ✓ " + "超长节点名称" * 18
         window._result(RoundResult("组", name, [Measurement(name, 80 + count)], "模拟数据 · QA"))
-        window.navigate(count % 5)
+        window.navigate(count % 6)
         window.resize(850 if count % 2 else 1440, 630 if count % 2 else 900)
         if count < 100:
             return
         timer.stop()
         window.grab().save(str(args.output_dir / "runtime.png"))
-        report = {"updates": count, "pages": 5, "network_requests": 0,
+        report = {"updates": count, "pages": 6, "network_requests": 0,
                   "font": QFontInfo(window.node.font()).family(),
                   "dpr": window.devicePixelRatioF()}
         (args.output_dir / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -63,7 +63,7 @@ def main():
         logger.removeHandler(handler)
     if count != 100:
         return 1
-    print(f"Runtime check: {count} updates, 5 pages, no network requests")
+    print(f"Runtime check: {count} updates, 6 pages, no network requests")
     return code
 
 

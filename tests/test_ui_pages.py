@@ -6,7 +6,7 @@ from functools import partial
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QImage, QPainter, QRawFont, QTextLayout
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QImage, QPainter, QRawFont, QTextDocument, QTextLayout
 from PySide6.QtWidgets import QApplication, QMessageBox, QToolTip
 from PySide6.QtTest import QTest
 
@@ -19,7 +19,7 @@ from smart_switcher.status import TrafficState
 from smart_switcher.ui import MainWindow
 from tests.fakes import FakeClient
 from smart_switcher import motion
-from smart_switcher.theme import CONTROL_HEIGHT, FONT_FAMILY, TABLE_ROW_HEIGHT, font_families, load_app_fonts
+from smart_switcher.theme import COLORS, CONTROL_HEIGHT, FONT_FAMILY, TABLE_ROW_HEIGHT, configure_document_typography, font_families, load_app_fonts
 from smart_switcher.ui_components import icon, set_tone
 
 
@@ -53,7 +53,7 @@ def connect(window):
     return client
 
 
-def test_release_version_matches_project_and_sidebar(window):
+def test_release_version_matches_project_and_app_bar(window):
     from smart_switcher import __version__
     root = Path(__file__).resolve().parent.parent
     metadata = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
@@ -63,7 +63,7 @@ def test_release_version_matches_project_and_sidebar(window):
     assert window.sidebar_version.text() == f"v{__version__}"
 
 
-def test_sidebar_icons_have_visible_inset_in_all_navigation_states(window):
+def test_navigation_icons_have_visible_inset_in_all_navigation_states(window):
     for index, button in enumerate(window.nav_buttons):
         window.navigate(index)
         button.setFocus()
@@ -71,7 +71,7 @@ def test_sidebar_icons_have_visible_inset_in_all_navigation_states(window):
         assert button.height() == 48
         image = button.grab().toImage()
         dpr = image.devicePixelRatio()
-        ink = [(x, y) for y in range(image.height()) for x in range(round(32 * dpr))
+        ink = [(x, y) for y in range(image.height()) for x in range(image.width())
                if image.pixelColor(x, y).alpha() > 240 and
                image.pixelColor(x, y).blue() < 195 and
                image.pixelColor(x, y).blue() > image.pixelColor(x, y).green() + 8 and
@@ -119,6 +119,27 @@ def test_shared_control_and_table_dimensions_are_consistent(window):
     assert window.header_status.alignment() == Qt.AlignCenter
     assert window.table.rowHeight(0) == window.overview_table.rowHeight(0) == TABLE_ROW_HEIGHT
     assert window.table.horizontalHeader().height() == TABLE_ROW_HEIGHT
+
+
+def test_compact_workspace_preserves_results_space_and_complete_status(window):
+    connect(window)
+    window.resize(850, 630)
+    window.navigate(1)
+    QTest.qWait(180)
+    assert window.size() == window.minimumSize()
+    assert window.table.viewport().height() >= TABLE_ROW_HEIGHT * 2
+    window._busy(True)
+    QTest.qWait(80)
+    assert window.table.viewport().height() >= TABLE_ROW_HEIGHT * 2
+    window._busy(False)
+    message = "连接异常，当前控制接口无法访问，请检查 Clash Verge 的本机控制地址和密钥后重新检测"
+    window._status(message)
+    QTest.qWait(180)
+    badge = window.header_status
+    assert window.width() == 850
+    assert badge.toolTip() == badge.accessibleName() == message
+    assert badge.fontMetrics().horizontalAdvance(message) > badge.contentsRect().width()
+    assert window.navigation_bar.width() <= window.width()
 
 
 def test_settings_are_editable_while_automation_waits_and_runs(window, qtbot):
@@ -510,6 +531,10 @@ def test_shared_font_chain_and_mixed_script_glyphs(window):
     for control in controls:
         control.ensurePolished()
         assert control.font().families() == font_families()
+        assert control.font().hintingPreference() == QFont.PreferNoHinting
+        assert control.font().styleStrategy() & QFont.PreferAntialias
+        assert control.font().styleStrategy() & QFont.PreferOutline
+        assert QRawFont.fromFont(control.font()).familyName() == FONT_FAMILY
     layout = QTextLayout("节点 Tokyo Singapore 103 ms → ✓ … —", window.node.font())
     layout.beginLayout()
     line = layout.createLine()
@@ -520,6 +545,33 @@ def test_shared_font_chain_and_mixed_script_glyphs(window):
     set_tone(window.page_title, "warning")
     assert window.page_title.font().weight() == 600
     assert window.page_title.font().families() == font_families()
+    assert window.page_title.font().hintingPreference() == QFont.PreferNoHinting
+    for weight in (400, 500, 600):
+        font = QFont(window.node.font())
+        font.setWeight(QFont.Weight(weight))
+        assert QRawFont.fromFont(font).weight() == weight
+
+
+def test_rich_text_uses_real_ui_emphasis_and_keeps_content(window):
+    document = QTextDocument()
+    document.setMarkdown("连接设置 **保存后应用**，控制地址 `http://127.0.0.1:9090`。")
+    content = document.toPlainText()
+    configure_document_typography(document, pixel_size=15)
+    assert document.toPlainText() == content
+    assert document.defaultFont().families() == font_families()
+    assert document.defaultFont().hintingPreference() == QFont.PreferNoHinting
+    assert document.useDesignMetrics()
+    weights = []
+    block = document.begin()
+    while block.isValid():
+        iterator = block.begin()
+        while not iterator.atEnd():
+            fragment = iterator.fragment()
+            if fragment.isValid() and "保存后应用" in fragment.text():
+                weights.append(fragment.charFormat().fontWeight())
+            iterator += 1
+        block = block.next()
+    assert weights == [QFont.DemiBold]
 
 
 def test_missing_packaged_fonts_are_reported(window, monkeypatch, tmp_path):
@@ -527,6 +579,47 @@ def test_missing_packaged_fonts_are_reported(window, monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
     with pytest.raises(RuntimeError, match="Missing bundled font"):
         load_app_fonts.__wrapped__()
+
+
+def test_help_chapters_remain_reachable_in_compact_layout(window, qtbot):
+    window.navigate(5)
+    guide = window.help
+    assert [title for title, _ in guide.sections] == [
+        "快速开始", "连接设置", "自动切换", "测速与候选", "常见问题", "日常使用"]
+    assert guide.topic_panel.isVisible() and not guide.compact_selector.isVisible()
+    qtbot.mouseClick(guide.topic_buttons[1], Qt.LeftButton)
+    assert guide.chapter_title.text() == "连接设置"
+    assert "127.0.0.1:9090" in guide.browser.toPlainText()
+    window.resize(850, 630)
+    QTest.qWait(180)
+    assert not guide.topic_panel.isVisible() and guide.compact_selector.isVisible()
+    guide.topic_picker.setCurrentIndex(4)
+    assert guide.chapter_title.text() == "常见问题"
+    assert "没有发生自动切换" in guide.browser.toPlainText()
+    assert window.width() == 850 and window.height() == 630
+    assert guide.browser.horizontalScrollBar().maximum() == 0
+
+
+def test_help_reading_uses_shared_font_and_paragraph_spacing(window):
+    window.navigate(5)
+    document = window.help.browser.document()
+    assert document.defaultFont().families() == font_families()
+    assert document.defaultFont().pixelSize() == 15
+    window.help.select_topic(1)
+    code_fonts = []
+    block = window.help.browser.document().begin()
+    while block.isValid():
+        iterator = block.begin()
+        while not iterator.atEnd():
+            fragment = iterator.fragment()
+            if fragment.isValid() and "external-controller" in fragment.text():
+                code_fonts.append(fragment.charFormat().font())
+            iterator += 1
+        block = block.next()
+    assert code_fonts
+    assert all(font.families()[0] == "Consolas" and font.pixelSize() == 14 for font in code_fonts)
+    window.help.select_topic(4)
+    assert window.help.browser.document().defaultFont().hintingPreference() == QFont.PreferNoHinting
 
 
 @pytest.fixture
@@ -548,8 +641,11 @@ def test_rapid_navigation_finishes_at_latest_page(animated_window, qtbot):
     QTest.qWait(240)
     assert not window.motion.veil.isVisible()
     button = window.nav_buttons[1]
-    expected = button.mapTo(window.sidebar, QPoint(0, (button.height() - 24) // 2))
-    expected.setX(6)
+    expected = button.mapTo(window.navigation_bar, QPoint((button.width() - 24) // 2, button.height() - 5))
+    assert window.motion.indicator.pos() == expected
+    window.resize(850, 630)
+    QTest.qWait(180)
+    expected = button.mapTo(window.navigation_bar, QPoint((button.width() - 24) // 2, button.height() - 5))
     assert window.motion.indicator.pos() == expected
     assert client.reads == reads and not client.tests and not client.writes
 
@@ -609,7 +705,7 @@ def test_reduced_motion_has_instant_states_and_no_running_animation(animated_win
     assert not window.motion.veil.isVisible()
     assert window.motion.spinner.state() == QVariantAnimation.Stopped
     assert all(channel.state() == QVariantAnimation.Stopped for channel in window.motion._channels)
-    assert window.header_status.surface_color == QColor("#fff0ed")
+    assert window.header_status.surface_color == QColor(COLORS["error_bg"])
     assert window.header_refresh.busy_angle is None
     assert window.task_progress.maximum() == 1 and window.task_progress.value() == 1
     assert window.header_status.text()
@@ -624,7 +720,7 @@ def test_tone_transition_keeps_text_and_finishes_after_latest_status(animated_wi
     set_tone(window.header_status, "success")
     QTest.qWait(230)
     assert window.header_status.text() == "连接异常，请重新检测"
-    assert window.header_status.surface_color == QColor("#eaf5ef")
+    assert window.header_status.surface_color == QColor(COLORS["tint"])
     assert window.page_title.font().weight() == 600
     assert QRawFont.fromFont(window.page_title.font()).weight() >= 600
 

@@ -11,7 +11,7 @@ ICONS = (
     "activity", "play", "pause", "square", "refresh-cw", "search", "folder-open",
     "trash-2", "chevron-down", "chevron-up", "circle-alert",
     "circle-check", "plug", "radar", "gauge", "settings-2",
-    "circle-help", "power", "save", "arrow-up-right", "network",
+    "circle-help", "power", "save", "arrow-up-right", "network", "check", "x",
 )
 
 

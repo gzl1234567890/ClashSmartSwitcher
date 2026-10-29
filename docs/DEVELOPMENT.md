@@ -9,7 +9,7 @@ Windows x64、Python 3.12，固定依赖见 `requirements*.txt`。`requirements-
 
 `api`/`discovery` 负责本机接口，`core` 保持决策逻辑，`monitor` 管理线程与取消。
 `ui` 维护草稿、已应用规则和重连意图；`ui_layout` 仅负责页面组成，切页不能启动任务。
-`theme` 集中字体与样式，`motion` 集中动画偏好、时长和销毁清理。
+`theme` 集中字体与样式，`glass` 提供缓存的应用背景及磨砂材质，`motion` 集中动画偏好、时长和销毁清理。
 `diagnostics` 只记录本地运行指标、退出标记和不含变量值的故障调用位置。
 保持当前模块规模，不因目录整理改变 Mihomo 接口或配置格式。
 
@@ -72,11 +72,12 @@ ZIP 保留 README 链接所需的 `docs/` 相对路径，包含项目 LICENSE、
 ## 目录整理记录
 
 - 单个 `runtime_hooks/qt_path.py` 归入 `scripts/packaging/`，同步 spec。
-- 历史 VERIFICATION、脱敏 live-probe 和旧 81 项 XML 归入 `docs/history/`，不作为当前验收。
+- 旧版发布包、`docs/history/` 历史过程文件、历次 `verification/` 临时产物和备用 Qt 环境已于 2026-10-28 按用户要求清理；当前验证结果见 `UI_VERIFICATION.md`。
 - 原来跟踪的四张 `.impeccable/review` 截图归档到本地 `verification/archive/ui-v2`；
   新版精选图统一放 `docs/images/`，大量过程截图与工具缓存忽略。
 - 用户参考图从 `resources/` 移入本地 `verification/references/` 保留，不打包。
 - 检查代码、QSS、测试和下载清单后，删除未使用的六个 Lucide 资源：
   `check`、`x`、`eye`、`eye-off`、`unplug`、`chevron-right`，同步下载列表。
-- 保留 `resources/app.png`：它仍是 make_icon 生成 ICO 的中间资源，但不装入运行包。
+- 图标源图保存在 `resources/app-master.png`，高清成品为 `app-icon.png`，`scripts/make_icon.py` 从源图生成圆角边界与多尺寸 PNG/ICO；提示词和来源记录在 `app-icon-prompt.md`。运行包使用 `app.ico`，构建可直接复现格式转换。
+- 3.2.1 的帮助中心从 `docs/HELP.md` 六个 H2 章节加载内容；正文与原生控件共用随包字体，段落和代码由原生文档格式组织。
 - 空的旧 pytest 临时目录不包含源码；不将其纳入 Git。Conda、build/dist 保留为本地环境和产物。

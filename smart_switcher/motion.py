@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QStyleOptionToolButton, QStylePainter, QToolButton, QWidget,
 )
 
-from .theme import COLORS
+from .theme import COLORS, CONTROL_RADIUS
 
 
 DURATIONS = {"hover": 120, "press": 80, "focus": 120, "navigation": 160,
@@ -92,7 +92,8 @@ class SurfaceVeil(QWidget):
         if self.outline:
             painter.setBrush(Qt.NoBrush)
             painter.setPen(QPen(color, 1.4))
-            painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.8, 0.8, -0.8, -0.8), 6, 6)
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.8, 0.8, -0.8, -0.8),
+                                    CONTROL_RADIUS, CONTROL_RADIUS)
         else:
             painter.fillRect(self.rect(), color)
 
@@ -129,22 +130,23 @@ class FeedbackMixin:
         painter.setRenderHint(QPainter.Antialiasing)
         rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         values = self._feedback_values
+        radius = 6 if isinstance(self, QToolButton) else 12 if self.objectName() == "workspaceNav" else CONTROL_RADIUS
         primary = self.objectName() == "primary"
         tint = QColor("#ffffff" if primary else COLORS["accent"])
         tint.setAlphaF(values["hover"] * (0.09 if primary else 0.055))
         painter.setPen(Qt.NoPen)
         painter.setBrush(tint)
-        painter.drawRoundedRect(rect, 6, 6)
+        painter.drawRoundedRect(rect, radius, radius)
         pressed = QColor("#000000" if primary else COLORS["accent"])
         pressed.setAlphaF(values["press"] * 0.10)
         painter.setBrush(pressed)
-        painter.drawRoundedRect(rect, 6, 6)
+        painter.drawRoundedRect(rect, radius, radius)
         if values["focus"]:
             focus = QColor("#ffffff" if primary else COLORS["accent"])
             focus.setAlphaF(values["focus"] * 0.85)
             painter.setPen(QPen(focus, 1.2))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(rect, 6, 6)
+            painter.drawRoundedRect(rect, radius, radius)
 
 
 class MotionButton(QPushButton, FeedbackMixin):
@@ -206,7 +208,7 @@ class MotionToolButton(QToolButton, FeedbackMixin):
 
 
 class MotionController(QObject):
-    def __init__(self, window, sidebar):
+    def __init__(self, window, navigation):
         super().__init__(window)
         self.window = window
         self.disposed = False
@@ -217,10 +219,10 @@ class MotionController(QObject):
         self._focus_targets = {}
         self._busy = False
         self._current_page = window.tabs.currentIndex()
-        self.indicator = QWidget(sidebar)
+        self.indicator = QWidget(navigation)
         self.indicator.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.indicator.setStyleSheet("background: #087f69; border-radius: 2px;")
-        self.indicator.setFixedSize(3, 24)
+        self.indicator.setStyleSheet(f"background: {COLORS['accent']}; border-radius: 2px;")
+        self.indicator.setFixedSize(24, 3)
         self.veil = SurfaceVeil(window.tabs.currentWidget(), COLORS["background"])
         self.spinner = QVariantAnimation(self)
         self.spinner.setStartValue(0.0)
@@ -229,6 +231,8 @@ class MotionController(QObject):
         self.spinner.setLoopCount(-1)
         self.spinner.valueChanged.connect(window.header_refresh.set_busy_angle)
         window.installEventFilter(self)
+        for button in window.nav_buttons:
+            button.installEventFilter(self)
         window.destroyed.connect(self.dispose)
         for widget in window.findChildren(QWidget):
             if isinstance(widget, (QLineEdit, QComboBox, QSpinBox)) or widget.objectName() == "regionSelect":
@@ -278,11 +282,14 @@ class MotionController(QObject):
         if index < len(self.window.nav_buttons):
             button = self.window.nav_buttons[index]
             target = button.mapTo(self.indicator.parentWidget(), button.rect().topLeft())
-            target.setX(6)
-            target.setY(target.y() + (button.height() - 24) // 2)
+            target.setX(target.x() + (button.width() - self.indicator.width()) // 2)
+            target.setY(target.y() + button.height() - 5)
             self.indicator.show()
             self.indicator.raise_()
             if initial or not self.visible:
+                channel = getattr(self.indicator, "_motion_channels", {}).get("navigation")
+                if channel is not None:
+                    channel.stop()
                 self.indicator.move(target)
             else:
                 self.transition(self.indicator, "navigation", self.indicator.pos(), target,
@@ -303,7 +310,7 @@ class MotionController(QObject):
         if not hasattr(widget, "set_surface_color"):
             return
         colors = {"error": COLORS["error_bg"], "warning": COLORS["warning_bg"],
-                  "success": COLORS["tint"], "": "#eef2f0", "info": "#edf4f0"}
+                  "success": COLORS["tint"], "": "#e8edf5", "info": COLORS["accent_tint"]}
         target = QColor(colors.get(widget.property("tone"), colors[""]))
         start = widget.surface_color or QColor(colors.get(previous, colors[""]))
         self.transition(widget, "tone", start, target,
@@ -362,6 +369,10 @@ class MotionController(QObject):
         if self.disposed:
             return False
         kind = event.type()
+        if watched in self.window.nav_buttons:
+            if kind in (QEvent.Move, QEvent.Resize):
+                self.navigate(self._current_page, initial=True)
+            return False
         if watched is self.window:
             if kind in (QEvent.Show, QEvent.WindowStateChange, QEvent.ActivationChange):
                 self.refresh_preferences()

@@ -9,8 +9,12 @@ dependencies to regenerate the Regular (400), Medium (500), and SemiBold (600)
 faces. The family is renamed to avoid matching an installed variable face.
 Original copyright notices remain embedded in the fonts.
 
-Windows uses Microsoft YaHei UI / Microsoft YaHei first; these static faces are
-the shipped CJK fallback. QSS and native text use the same chain. Generated
+The UI uses the bundled Clash Sans SC family first, giving native widgets and
+rich text the same real 400/500/600 weights. Microsoft YaHei UI / Microsoft YaHei
+and Windows symbol/emoji faces remain fallbacks. QSS and native text share this
+chain and request antialiased outline rendering without grid hinting, keeping
+fractional-DPI strokes consistent. Rich text uses design metrics and maps
+emphasis to the bundled SemiBold face. Generated
 instances remove the empty STAT table and use Windows legacy Regular/Bold
 grouping plus typographic style names, so Qt selects real 400/500/600 data rather
 than synthesizing bold from the Medium face. Tests inspect OS/2 weight data and

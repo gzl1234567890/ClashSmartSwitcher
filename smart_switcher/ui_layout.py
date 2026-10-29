@@ -1,18 +1,21 @@
 """Native page layouts; navigation never starts or resets controller work."""
 from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QBoxLayout, QCheckBox, QComboBox, QFormLayout, QFrame, QGridLayout,
+    QBoxLayout, QCheckBox, QComboBox, QFormLayout, QFrame,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QProgressBar,
     QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget,
-    QTableWidget, QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
+    QTableWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import __version__
 from .config import MAX_CONCURRENCY
 from .region_select import RegionMultiSelect
-from .theme import COLORS, CONTROL_HEIGHT, ICON_SIZE, SPACE, TABLE_ROW_HEIGHT, interface_font
+from .theme import COLORS, CONTROL_HEIGHT, ICON_SIZE, SPACE, TABLE_ROW_HEIGHT
 from .ui_components import ElidedLabel, LatencyTrendWidget, NoticePanel, StatusBadge, icon, resource_path
 from .motion import MotionButton
+from .glass import GlassCanvas, GlassSurface
+from .help_page import HelpCenter
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -21,6 +24,14 @@ class NoWheelSpinBox(QSpinBox):
 
 
 class WindowLayout:
+    PAGE_DESCRIPTIONS = (
+        "当前连接、节点延迟与运行动态，一目了然。",
+        "查看组内节点延迟，找到合适的连接。",
+        "按已保存的规则，管理当前代理组。",
+        "查看每一次检测与切换的运行记录。",
+        "管理本机连接、检测规则与应用偏好。",
+        "了解连接方式，排查常见问题。",
+    )
     PAGE_TITLES = (
         ("运行总览", "总览"), ("节点测速", "节点测速"),
         ("自动切换", "自动切换"), ("运行日志", "运行日志"),
@@ -53,7 +64,7 @@ class WindowLayout:
         return label
 
     def _panel(self, title, action=None):
-        panel = QFrame()
+        panel = GlassSurface()
         panel.setObjectName("dashboardPanel")
         box = QVBoxLayout(panel)
         box.setContentsMargins(*([SPACE["group"]] * 4))
@@ -80,71 +91,80 @@ class WindowLayout:
         return scroll, box
 
     def _build(self):
-        root = QWidget()
+        root = GlassCanvas()
         root.setObjectName("root")
         self.setCentralWidget(root)
-        root_layout = QHBoxLayout(root)
-        root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(0)
-        sidebar = QFrame()
-        self.sidebar = sidebar
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(206)
-        side = QVBoxLayout(sidebar)
-        side.setContentsMargins(16, 24, 16, 20)
-        side.setSpacing(8)
-        brand = QHBoxLayout()
-        brand.setSpacing(8)
+        body = QVBoxLayout(root)
+        body.setContentsMargins(28, 20, 28, 16)
+        body.setSpacing(16)
+
+        appbar = QHBoxLayout()
+        appbar.setSpacing(12)
         mark = QLabel()
-        mark.setPixmap(icon("network", COLORS["accent"]).pixmap(30, 30))
-        brand.addWidget(mark)
+        mark.setObjectName("brandMark")
+        mark.setFixedSize(42, 42)
+        mark.setAlignment(Qt.AlignCenter)
+        mark.setPixmap(QIcon(str(resource_path("resources/app.ico"))).pixmap(42, 42))
+        appbar.addWidget(mark)
         brand_text = QVBoxLayout()
-        brand_text.setSpacing(2)
+        brand_text.setSpacing(1)
         brand_text.addWidget(self.label("Clash", "brandTitle"))
         brand_text.addWidget(self.label("智能节点管家", "brandCaption"))
-        brand.addLayout(brand_text, 1)
-        side.addLayout(brand)
-        side.addSpacing(24)
+        appbar.addLayout(brand_text)
+        self.sidebar_version = self.label(f"v{__version__}", "appVersion")
+        appbar.addWidget(self.sidebar_version, 0, Qt.AlignTop)
+        appbar.addStretch()
+        self.header_status = self.label("接口未连接", "badge")
+        appbar.addWidget(self.header_status, 0, Qt.AlignVCenter)
+        self.header_refresh = self.button("", "refresh-cw", self.connect_api, quiet=True)
+        self.header_refresh.setToolTip("重新检测本机控制接口")
+        self.header_refresh.setAccessibleName("重新检测本机控制接口")
+        appbar.addWidget(self.header_refresh)
+        self.discover_button = self.button("自动发现", "radar", self.discover_api)
+        appbar.addWidget(self.discover_button)
+        help_button = self.button("", "circle-help", lambda: self.navigate(5), quiet=True)
+        help_button.setToolTip("帮助与排查")
+        help_button.setAccessibleName("帮助与排查")
+        appbar.addWidget(help_button)
+        self.exit_button = self.button("", "power", self.request_exit, quiet=True)
+        self.exit_button.setToolTip("退出应用")
+        self.exit_button.setAccessibleName("退出应用")
+        appbar.addWidget(self.exit_button)
+        body.addLayout(appbar)
+
+        self.navigation_bar = GlassSurface(opacity=125)
+        self.navigation_bar.setObjectName("navigationBar")
+        navigation = QHBoxLayout(self.navigation_bar)
+        navigation.setContentsMargins(6, 6, 6, 6)
+        navigation.setSpacing(4)
         self.nav_buttons = []
         symbols = ("activity", "gauge", "refresh-cw", "folder-open", "settings-2")
         for index, symbol in enumerate(symbols):
             button = self.button(self.PAGE_TITLES[index][1], symbol,
                                  lambda checked=False, target=index: self.navigate(target))
-            button.setObjectName("sidebarNav")
+            button.setObjectName("workspaceNav")
             button.setFixedHeight(48)
             button.setCheckable(True)
             self.nav_buttons.append(button)
-            side.addWidget(button)
-        side.addStretch()
-        side.addWidget(self.button("帮助与排查", "circle-help", lambda: self.navigate(5), quiet=True))
-        self.sidebar_connection = self.label("本机控制器 · 未连接", "sidebarStatus", wrap=True)
-        self.sidebar_version = self.label(f"v{__version__}", "sidebarVersion")
-        side.addWidget(self.sidebar_connection)
-        side.addWidget(self.sidebar_version)
-        root_layout.addWidget(sidebar)
+            navigation.addWidget(button, 1)
+        body.addWidget(self.navigation_bar)
 
-        main = QWidget()
-        main.setObjectName("appMain")
-        body = QVBoxLayout(main)
-        body.setContentsMargins(SPACE["page"], SPACE["page"], SPACE["page"], SPACE["control"])
-        body.setSpacing(SPACE["section"])
-        header = QHBoxLayout()
-        header.setSpacing(SPACE["small"])
+        self.context_header = QBoxLayout(QBoxLayout.LeftToRight)
+        self.context_header.setSpacing(20)
+        title_block = QWidget()
+        title_group = QVBoxLayout(title_block)
+        title_group.setContentsMargins(0, 0, 0, 0)
+        title_group.setSpacing(4)
         self.page_title = self.label("运行总览", "pageTitle")
-        header.addWidget(self.page_title, 1)
-        self.header_status = self.label("接口未连接", "badge")
-        header.addWidget(self.header_status)
-        self.header_refresh = self.button("", "refresh-cw", self.connect_api, quiet=True)
-        self.header_refresh.setFixedWidth(38)
-        self.header_refresh.setToolTip("重新检测本机控制接口")
-        self.header_refresh.setAccessibleName("重新检测本机控制接口")
-        header.addWidget(self.header_refresh)
-        body.addLayout(header)
-
-        self.group_row = QWidget()
+        self.page_description = self.label(self.PAGE_DESCRIPTIONS[0], "pageDescription", wrap=True)
+        title_group.addWidget(self.page_title)
+        title_group.addWidget(self.page_description)
+        self.context_header.addWidget(title_block, 3)
+        self.group_row = GlassSurface(opacity=145)
+        self.group_row.setObjectName("groupToolbar")
         self.group_toolbar = QBoxLayout(QBoxLayout.LeftToRight, self.group_row)
-        self.group_toolbar.setContentsMargins(0, 0, 0, 0)
-        self.group_toolbar.setSpacing(8)
+        self.group_toolbar.setContentsMargins(14, 10, 14, 10)
+        self.group_toolbar.setSpacing(10)
         self.group_toolbar.addWidget(self.label("代理组", "fieldLabel"))
         self.group = QComboBox()
         self.group.setAccessibleName("需要管理的代理组")
@@ -159,7 +179,8 @@ class WindowLayout:
         self.last_checked = self.label("尚未检测", "muted")
         self.last_checked.setMinimumWidth(120)
         self.group_toolbar.addWidget(self.last_checked)
-        body.addWidget(self.group_row)
+        self.context_header.addWidget(self.group_row, 5)
+        body.addLayout(self.context_header)
 
         self.notice = NoticePanel("尚未连接本机控制接口")
         self.notice_retry = self.button("重新检测", "refresh-cw", self.connect_api, quiet=True)
@@ -179,37 +200,38 @@ class WindowLayout:
         self._automation_page()
         self._logs_page()
         self._settings_page()
-        self.help = QTextBrowser()
-        self.help.setOpenExternalLinks(True)
-        self.help.setFont(interface_font())
         help_path = resource_path("docs/HELP.md")
-        self.help.setMarkdown(help_path.read_text(encoding="utf-8") if help_path.exists() else "请查看分发包内的中文 README.md。")
+        help_text = help_path.read_text(encoding="utf-8") if help_path.exists() else "请查看分发包内的中文 README.md。"
+        self.help = HelpCenter(help_text)
         self.tabs.addTab(self.help, "帮助与排查")
         body.addWidget(self.tabs, 1)
+
         footer = QHBoxLayout()
-        footer.setSpacing(8)
-        self.connect_button = self.button("重新检测连接", "refresh-cw", self.connect_api, quiet=True)
-        self.discover_button = self.button("自动发现", "radar", self.discover_api, quiet=True)
-        footer.addWidget(self.connect_button)
-        footer.addWidget(self.discover_button)
+        footer.setContentsMargins(2, 0, 2, 0)
+        footer.setSpacing(16)
+        self.sidebar_connection = self.label("本机控制器 · 未连接", "connectionStatus")
+        footer.addWidget(self.sidebar_connection)
         footer.addStretch()
         self.version_label = ElidedLabel("本机控制接口 · 等待检测")
         self.version_label.setObjectName("muted")
+        self.version_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         footer.addWidget(self.version_label, 1)
-        self.exit_button = self.button("", "power", self.request_exit, quiet=True)
-        self.exit_button.setToolTip("退出应用")
-        self.exit_button.setAccessibleName("退出应用")
-        footer.addWidget(self.exit_button)
         body.addLayout(footer)
-        root_layout.addWidget(main, 1)
         self.tabs.currentChanged.connect(self._page_changed)
         self._page_changed(0)
+        self._size_controls()
+        self._arrange_actions()
+        self.statusBar().hide()
+
+    def _size_controls(self):
+        # Resolve QSS font metrics before restoring the shared outer geometry.
         for field in self.findChildren(QWidget):
             if isinstance(field, (QLineEdit, QComboBox, QSpinBox)) and field.objectName() != "regionSearch":
                 if not isinstance(field.parentWidget(), QSpinBox):
                     field.setFixedHeight(CONTROL_HEIGHT)
-        self._arrange_actions()
-        self.statusBar().hide()
+            elif isinstance(field, QPushButton):
+                height = 48 if field.objectName() == "workspaceNav" else 42 if field.objectName() == "helpTopic" else CONTROL_HEIGHT
+                field.setFixedHeight(height)
 
     def navigate(self, index):
         if self.tabs.currentIndex() == index:
@@ -219,6 +241,7 @@ class WindowLayout:
 
     def _page_changed(self, index):
         self.page_title.setText(self.PAGE_TITLES[index][0])
+        self.page_description.setText(self.PAGE_DESCRIPTIONS[index])
         for target, button in enumerate(self.nav_buttons):
             button.setChecked(index == target)
         self.group_row.setVisible(index < 3)
@@ -236,89 +259,89 @@ class WindowLayout:
     def _overview_page(self):
         scroll, page = self._scroll_page()
         self.summary = QWidget()
-        self.metric_grid = QGridLayout(self.summary)
-        self.metric_grid.setContentsMargins(0, 0, 0, 0)
-        self.metric_grid.setSpacing(16)
-        self.group_context = ElidedLabel("未选择")
-        self.node = ElidedLabel("等待连接")
-        self.node.setObjectName("node")
-        self.delay = self.label("未测速", "delay")
-        self.auto_state = self.label("已关闭", "autoState")
-        self.system_state = self.label("未知", "metricValue")
-        self.tun_state = self.label("未知", "metricValue")
-        self.metric_cards = []
-        for title, value, symbol in (
-            ("当前代理组", self.group_context, "network"),
-            ("当前节点", self.node, "arrow-up-right"),
-            ("节点延迟", self.delay, "gauge"),
-            ("自动切换", self.auto_state, "refresh-cw"),
-            ("系统代理", self.system_state, "circle-check"),
-            ("TUN 模式", self.tun_state, "plug"),
-        ):
-            card = QFrame()
-            card.setObjectName("metricCard")
-            box = QVBoxLayout(card)
-            box.setContentsMargins(*([SPACE["group"]] * 4))
-            box.setSpacing(SPACE["small"])
-            heading = QHBoxLayout()
-            heading.setSpacing(SPACE["small"])
-            glyph = QLabel()
-            glyph.setFixedSize(ICON_SIZE, ICON_SIZE)
-            glyph.setPixmap(icon(symbol, COLORS["accent"]).pixmap(18, 18))
-            heading.addWidget(glyph)
-            heading.addWidget(self.label(title, "metricTitle"), 1)
-            box.addLayout(heading)
-            if not value.objectName():
-                value.setObjectName("metricValue")
-            box.addWidget(value)
-            card.setMinimumHeight(108)
-            card.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-            self.metric_cards.append(card)
-        page.addWidget(self.summary)
+        self.summary.setObjectName("summary")
+        self.connection_row = QBoxLayout(QBoxLayout.LeftToRight, self.summary)
+        self.connection_row.setContentsMargins(0, 0, 0, 0)
+        self.connection_row.setSpacing(16)
 
-        self.insight_row = QBoxLayout(QBoxLayout.LeftToRight)
-        self.insight_row.setSpacing(16)
-        self.trend_caption = self.label("最近 5 次检测")
-        trend, box = self._panel("节点延迟趋势", self.trend_caption)
-        self.latency_trend = LatencyTrendWidget()
-        box.addWidget(self.latency_trend, 1)
-        self.insight_row.addWidget(trend, 3)
-        connection, box = self._panel("连接状态")
+        current, box = self._panel("当前连接")
+        current.setObjectName("currentConnection")
+        title = box.itemAt(0).layout()
+        title.addWidget(self.label("代理组", "muted"))
+        self.group_context = ElidedLabel("未选择")
+        self.group_context.setObjectName("groupContext")
+        self.group_context.setMaximumWidth(240)
+        title.addWidget(self.group_context, 1)
+        node_row = QHBoxLayout()
+        node_row.setSpacing(20)
+        self.node = ElidedLabel("等待连接")
+        self.node.setObjectName("activeNode")
+        node_row.addWidget(self.node, 1)
+        latency = QVBoxLayout()
+        latency.setSpacing(1)
+        latency.addWidget(self.label("节点延迟", "muted"))
+        self.delay = self.label("未测速", "delay")
+        latency.addWidget(self.delay)
+        node_row.addLayout(latency)
+        box.addLayout(node_row)
         self.connection_detail = ElidedLabel("等待连接本机控制器")
-        self.connection_detail.setObjectName("fieldLabel")
-        self.traffic_label = self.label("系统代理：状态无法确认\nTUN：状态无法确认", wrap=True)
-        self.traffic_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.connection_detail.setObjectName("muted")
         box.addWidget(self.connection_detail)
-        box.addWidget(self.traffic_label)
+        states = QHBoxLayout()
+        states.setSpacing(10)
+        self.system_state = self.label("未知", "trafficState")
+        self.tun_state = self.label("未知", "trafficState")
+        states.addWidget(self.label("系统代理", "muted"))
+        states.addWidget(self.system_state)
+        states.addSpacing(16)
+        states.addWidget(self.label("TUN 模式", "muted"))
+        states.addWidget(self.tun_state)
+        states.addStretch()
+        self.connect_button = self.button("连接设置", "settings-2", lambda: self.navigate(4), quiet=True)
+        states.addWidget(self.connect_button)
+        box.addLayout(states)
+        self.connection_row.addWidget(current, 3)
+
+        automation, box = self._panel("自动切换")
+        self.auto_state = self.label("已关闭", "automationState")
+        box.addWidget(self.auto_state)
+        self.overview_rule_hint = self.label("", wrap=True)
+        box.addWidget(self.overview_rule_hint)
         box.addStretch()
-        quick = QHBoxLayout()
-        quick.setSpacing(8)
-        self.overview_auto_button = self.button("自动切换", "refresh-cw", lambda: self.navigate(2))
-        quick.addWidget(self.overview_auto_button)
-        quick.addWidget(self.button("设置", "settings-2", lambda: self.navigate(4), quiet=True))
-        box.addLayout(quick)
-        self.insight_row.addWidget(connection, 2)
-        page.addLayout(self.insight_row)
+        self.overview_auto_button = self.button("管理自动切换", "arrow-up-right", lambda: self.navigate(2), primary=True)
+        box.addWidget(self.overview_auto_button)
+        self.connection_row.addWidget(automation, 2)
+        page.addWidget(self.summary)
 
         self.overview_bottom = QBoxLayout(QBoxLayout.LeftToRight)
         self.overview_bottom.setSpacing(16)
-        preview, box = self._panel("当前代理组节点", self.button("查看全部", "arrow-up-right", lambda: self.navigate(1), quiet=True))
+        preview, box = self._panel("当前代理组节点", self.button("全部节点", "arrow-up-right", lambda: self.navigate(1), quiet=True))
         self.overview_table = self._node_table(preview=True)
         self.preview_empty = self.label("连接并选择代理组后显示节点", wrap=True)
         box.addWidget(self.preview_empty)
         box.addWidget(self.overview_table)
         self.overview_bottom.addWidget(preview, 3)
-        recent, box = self._panel("最近日志", self.button("全部日志", "arrow-up-right", lambda: self.navigate(3), quiet=True))
-        self.recent_logs = self._log_view(5)
-        self.recent_logs.setMinimumHeight(170)
-        box.addWidget(self.recent_logs, 1)
-        self.overview_bottom.addWidget(recent, 2)
+        self.trend_caption = self.label("最近 5 次检测")
+        trend, box = self._panel("延迟趋势")
+        box.addWidget(self.trend_caption)
+        self.latency_trend = LatencyTrendWidget()
+        box.addWidget(self.latency_trend, 1)
+        box.addWidget(self.label("仅展示当前节点的实际检测记录", wrap=True))
+        self.overview_bottom.addWidget(trend, 2)
         page.addLayout(self.overview_bottom)
+
+        recent, box = self._panel("最近动态", self.button("运行日志", "arrow-up-right", lambda: self.navigate(3), quiet=True))
+        self.recent_logs = self._log_view(5)
+        self.recent_logs.setObjectName("embeddedLog")
+        self.recent_logs.setFixedHeight(90)
+        box.addWidget(self.recent_logs)
+        page.addWidget(recent)
         page.addStretch()
         self.tabs.addTab(scroll, "总览")
 
     def _node_table(self, preview=False):
         table = QTableWidget(0, 3 if preview else 4)
+        table.setObjectName("nodePreview" if preview else "nodeResults")
         table.setMouseTracking(True)
         table.setHorizontalHeaderLabels(["节点名称", "延迟", "状态"] if preview else ["节点名称", "延迟", "测速状态", "角色与说明"])
         table.setAccessibleName("节点摘要" if preview else "节点测速结果")
@@ -350,14 +373,13 @@ class WindowLayout:
     def _measurement_page(self):
         page_widget = QWidget()
         page = QVBoxLayout(page_widget)
+        self.measurement_layout = page
         page.setContentsMargins(0, 0, 0, 0)
-        page.setSpacing(16)
+        page.setSpacing(12)
         self.measure_context = self.label("尚无测速结果", "section", wrap=True)
-        page.addWidget(self.measure_context)
         row = QHBoxLayout()
         row.setSpacing(SPACE["small"])
-        self.table_caption = self.label("当前代理组 · 候选节点", "fieldLabel", wrap=True)
-        row.addWidget(self.table_caption, 1)
+        row.addWidget(self.measure_context, 1)
         self.node_search = QLineEdit()
         self.node_search.setPlaceholderText("搜索节点")
         self.node_search.setAccessibleName("筛选展示的节点，不改变测速范围")
@@ -369,10 +391,16 @@ class WindowLayout:
         self.node_search.textChanged.connect(self._filter_nodes)
         row.addWidget(self.node_search)
         page.addLayout(row)
+        metadata = QHBoxLayout()
+        metadata.setSpacing(16)
+        self.table_caption = self.label("当前代理组 · 候选节点", "muted", wrap=True)
+        metadata.addWidget(self.table_caption, 1)
         self.result_summary = self.label("等待连接", wrap=True)
-        page.addWidget(self.result_summary)
+        metadata.addWidget(self.result_summary)
+        page.addLayout(metadata)
         self.results_stack = QStackedWidget()
         self.table = self._node_table()
+        self.table.setMinimumHeight(TABLE_ROW_HEIGHT * 3 + 2)
         self.results_stack.addWidget(self.table)
         empty = QWidget()
         empty_layout = QVBoxLayout(empty)
@@ -402,8 +430,11 @@ class WindowLayout:
 
     def _automation_page(self):
         scroll, page = self._scroll_page()
-        controls = QVBoxLayout()
-        controls.setSpacing(12)
+        self.automation_columns = QBoxLayout(QBoxLayout.LeftToRight)
+        self.automation_columns.setSpacing(16)
+        live = QVBoxLayout()
+        live.setSpacing(16)
+        status, controls = self._panel("运行控制")
         self.auto_detail = self.label("已关闭", "automationState")
         self.auto_context = self.label("只管理选定的代理组", wrap=True)
         self.automation_node = ElidedLabel("当前节点 · 等待连接")
@@ -411,6 +442,9 @@ class WindowLayout:
         controls.addWidget(self.auto_detail)
         controls.addWidget(self.auto_context)
         controls.addWidget(self.automation_node)
+        self.traffic_label = self.label("系统代理：状态无法确认    TUN：状态无法确认", wrap=True)
+        self.traffic_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        controls.addWidget(self.traffic_label)
         self.action_buttons = QWidget()
         self.auto_actions = QBoxLayout(QBoxLayout.LeftToRight, self.action_buttons)
         self.auto_actions.setContentsMargins(0, 0, 0, 0)
@@ -423,7 +457,15 @@ class WindowLayout:
             self.auto_actions.addWidget(button)
         self.auto_actions.addStretch()
         controls.addWidget(self.action_buttons)
-        page.addLayout(controls)
+        live.addWidget(status)
+        history, box = self._panel("近期切换记录")
+        self.switch_history = self._log_view(100)
+        self.switch_history.setObjectName("embeddedLog")
+        self.switch_history.setPlaceholderText("本次运行尚无节点切换记录")
+        self.switch_history.setMinimumHeight(180)
+        box.addWidget(self.switch_history)
+        live.addWidget(history, 1)
+        self.automation_columns.addLayout(live, 3)
         rules, box = self._panel("自动切换规则", self.button("编辑规则", "settings-2", self._open_rules, quiet=True))
         self.rule_threshold = self.label("延迟阈值    未设置", "ruleValue")
         self.rule_interval = self.label("检测间隔    未设置", "ruleValue")
@@ -432,13 +474,10 @@ class WindowLayout:
         self.rule_cooldown = self.label("最小切换间隔    未设置", "ruleValue")
         for row in (self.rule_threshold, self.rule_interval, self.rule_regions, self.rule_timeout, self.rule_cooldown):
             box.addWidget(row)
-        page.addWidget(rules)
-        history, box = self._panel("近期切换记录")
-        self.switch_history = self._log_view(100)
-        self.switch_history.setPlaceholderText("本次运行尚无节点切换记录")
-        self.switch_history.setMinimumHeight(160)
-        box.addWidget(self.switch_history)
-        page.addWidget(history)
+        box.addWidget(self.label("仅在当前节点超过阈值或测速失败时，才考虑切换。", wrap=True))
+        box.addStretch()
+        self.automation_columns.addWidget(rules, 2)
+        page.addLayout(self.automation_columns)
         page.addStretch()
         self.tabs.addTab(scroll, "自动切换")
 
@@ -478,7 +517,7 @@ class WindowLayout:
         page.setContentsMargins(0, 0, 0, 0)
         page.setSpacing(0)
         self.settings_lock_hint = self.label("修改后请保存。新的规则从下一轮检测生效；连接信息变更会重新检测连接。", wrap=True)
-        self.settings_lock_hint.setContentsMargins(16, 12, 16, 8)
+        self.settings_lock_hint.setContentsMargins(2, 2, 2, 14)
         page.addWidget(self.settings_lock_hint)
         scroll = QScrollArea()
         self.settings_scroll = scroll
@@ -488,15 +527,23 @@ class WindowLayout:
         widget = QWidget()
         widget.setObjectName("settingsContent")
         self.settings_widget = widget
-        sections = QVBoxLayout(widget)
-        sections.setContentsMargins(16, 8, 16, 16)
-        sections.setSpacing(16)
+        self.settings_columns = QBoxLayout(QBoxLayout.LeftToRight, widget)
+        self.settings_columns.setContentsMargins(0, 0, 0, 16)
+        self.settings_columns.setSpacing(16)
+        primary = QVBoxLayout()
+        secondary = QVBoxLayout()
+        primary.setSpacing(16)
+        secondary.setSpacing(16)
+        self.settings_columns.addLayout(primary, 1)
+        self.settings_columns.addLayout(secondary, 1)
+        section_count = 0
 
         def section(title, hint):
-            frame = QFrame()
+            nonlocal section_count
+            frame = GlassSurface()
             frame.setObjectName("settingsSection")
             box = QVBoxLayout(frame)
-            box.setContentsMargins(0, 0, 0, 16)
+            box.setContentsMargins(18, 16, 18, 18)
             box.setSpacing(8)
             box.addWidget(self.label(title, "section"))
             box.addWidget(self.label(hint, wrap=True))
@@ -508,7 +555,8 @@ class WindowLayout:
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setRowWrapPolicy(QFormLayout.WrapLongRows)
             box.addLayout(form)
-            sections.addWidget(frame)
+            (primary if section_count < 2 else secondary).addWidget(frame)
+            section_count += 1
             return form
 
         connection = section("连接设置", "填写本机控制接口，不是代理流量端口。")
@@ -552,10 +600,11 @@ class WindowLayout:
         self.save_secret = QCheckBox("使用 Windows 账户加密保存密钥")
         app.addRow("窗口行为", self.close_to_tray)
         app.addRow("密钥保存", self.save_secret)
-        sections.addStretch()
+        primary.addStretch()
+        secondary.addStretch()
         scroll.setWidget(widget)
         page.addWidget(scroll, 1)
-        save_bar = QWidget()
+        save_bar = GlassSurface(opacity=210)
         save_bar.setObjectName("saveBar")
         save = QHBoxLayout(save_bar)
         save.setSpacing(SPACE["small"])
@@ -598,23 +647,19 @@ class WindowLayout:
         return row
 
     def _arrange_actions(self):
-        if not hasattr(self, "metric_cards"):
+        if not hasattr(self, "connection_row"):
             return
-        available = self.width() - 254
-        columns = 6 if available >= 1100 else 3
-        if getattr(self, "_metric_columns", None) != columns:
-            self._metric_columns = columns
-            for col in range(6):
-                self.metric_grid.setColumnStretch(col, 0)
-            for index, card in enumerate(self.metric_cards):
-                self.metric_grid.removeWidget(card)
-                self.metric_grid.addWidget(card, index // columns, index % columns)
-            for col in range(columns):
-                self.metric_grid.setColumnStretch(col, 1)
-        direction = QBoxLayout.TopToBottom if available < 780 else QBoxLayout.LeftToRight
-        self.insight_row.setDirection(direction)
+        available = self.width() - 56
+        compact = available < 1000
+        self.measurement_layout.setSpacing(8 if compact else 12)
+        self.context_header.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
+        direction = QBoxLayout.TopToBottom if available < 900 else QBoxLayout.LeftToRight
+        self.connection_row.setDirection(direction)
         self.overview_bottom.setDirection(direction)
-        self.last_checked.setVisible(available >= 740)
+        self.automation_columns.setDirection(direction)
+        self.settings_columns.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
+        self.last_checked.setVisible(available >= 1000)
+        controls_width = available if direction == QBoxLayout.TopToBottom else available * .6
         required = sum(button.minimumSizeHint().width() for button in
                        (self.start_button, self.pause_button, self.stop_button)) + 16
-        self.auto_actions.setDirection(QBoxLayout.TopToBottom if available - 16 < required else QBoxLayout.LeftToRight)
+        self.auto_actions.setDirection(QBoxLayout.TopToBottom if controls_width - 40 < required else QBoxLayout.LeftToRight)
